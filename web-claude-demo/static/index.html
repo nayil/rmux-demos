@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>rmux web terminal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050608;
+        --panel: #191927;
+        --green: #9dff00;
+        --muted: #76798a;
+        --text: #d7deff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+      }
+
+      body {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+
+      .screen {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        width: 100vw;
+        height: 100dvh;
+        min-height: 100vh;
+        background: var(--bg);
+      }
+
+      .topbar,
+      .bottombar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 28px;
+        padding: 2px 8px;
+        overflow: hidden;
+        color: var(--text);
+        background: #000;
+        white-space: nowrap;
+      }
+
+      .brand {
+        color: var(--text);
+      }
+
+      .tab {
+        padding: 0 8px;
+        color: #111;
+        background: var(--green);
+      }
+
+      .hint {
+        color: var(--muted);
+      }
+
+      .terminal-frame {
+        min-height: 0;
+        padding: 3px 6px;
+        background: var(--panel);
+      }
+
+      #terminal {
+        width: 100%;
+        height: 100%;
+        border: 1px solid var(--green);
+      }
+
+      .bottombar {
+        justify-content: space-between;
+      }
+
+      .keys {
+        display: flex;
+        min-width: 0;
+        gap: 4px;
+        overflow: hidden;
+      }
+
+      kbd {
+        padding: 0 6px;
+        color: #101015;
+        background: #d8dbe8;
+        font: inherit;
+      }
+
+      @media (max-width: 640px) {
+        .topbar,
+        .bottombar {
+          min-height: 24px;
+          padding-inline: 5px;
+          font-size: 12px;
+        }
+
+        .hint,
+        .keys kbd:nth-child(n + 4) {
+          display: none;
+        }
+
+        .terminal-frame {
+          padding: 2px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="screen">
+      <div class="topbar">
+        <span class="brand">rmux web</span>
+        <span class="tab">Claude</span>
+        <span class="hint">same session, browser + terminal</span>
+      </div>
+      <section class="terminal-frame" aria-label="terminal">
+        <div id="terminal"></div>
+      </section>
+      <div class="bottombar">
+        <span class="keys">
+          <kbd>type</kbd>
+          <kbd>reload</kbd>
+          <kbd>reattach</kbd>
+          <kbd>same pane</kbd>
+        </span>
+        <span id="status" class="hint">connecting</span>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+    <script>
+      const status = document.getElementById("status");
+      const term = new Terminal({
+        allowProposedApi: false,
+        cursorBlink: true,
+        convertEol: false,
+        scrollback: 5000,
+        fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        fontSize: innerWidth < 640 ? 12 : 15,
+        lineHeight: 1.08,
+        theme: {
+          background: "#191927",
+          foreground: "#d7deff",
+          cursor: "#9dff00",
+          selectionBackground: "#3c425e",
+          black: "#11111b",
+          red: "#f38ba8",
+          green: "#a6e3a1",
+          yellow: "#f9e2af",
+          blue: "#89b4fa",
+          magenta: "#cba6f7",
+          cyan: "#94e2d5",
+          white: "#cdd6f4",
+          brightBlack: "#585b70",
+          brightRed: "#f38ba8",
+          brightGreen: "#a6e3a1",
+          brightYellow: "#f9e2af",
+          brightBlue: "#89b4fa",
+          brightMagenta: "#cba6f7",
+          brightCyan: "#94e2d5",
+          brightWhite: "#f5e0dc",
+        },
+      });
+      const fit = new FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.open(document.getElementById("terminal"));
+
+      let ws;
+      let lastSize = "";
+
+      function fitAndResize() {
+        fit.fit();
+        const size = `${term.cols}x${term.rows}`;
+        if (ws?.readyState === WebSocket.OPEN && size !== lastSize) {
+          lastSize = size;
+          ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        }
+      }
+
+      function connect() {
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${location.host}/ws`);
+        ws.binaryType = "arraybuffer";
+        status.textContent = "connecting";
+
+        ws.onopen = () => {
+          status.textContent = "live";
+          fitAndResize();
+          term.focus();
+        };
+
+        ws.onmessage = (event) => {
+          if (event.data instanceof ArrayBuffer) {
+            term.write(new Uint8Array(event.data));
+          } else {
+            term.write(event.data);
+          }
+        };
+
+        ws.onclose = () => {
+          status.textContent = "reconnecting";
+          setTimeout(connect, 600);
+        };
+      }
+
+      term.onData((data) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "data", data }));
+        }
+      });
+
+      addEventListener("resize", fitAndResize);
+      if (visualViewport) {
+        visualViewport.addEventListener("resize", fitAndResize);
+      }
+      document.body.addEventListener("pointerdown", () => term.focus());
+
+      fitAndResize();
+      connect();
+    </script>
+  </body>
+</html>

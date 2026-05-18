@@ -1,0 +1,14 @@
+[package]
+name = "broadcast-demo"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ratatui = { version = "=0.29.0", default-features = false, features = ["crossterm"] }
+ratatui-rmux = { git = "https://github.com/Helvesec/rmux" }
+rmux-sdk = { git = "https://github.com/Helvesec/rmux" }
+crossterm = "0.28.1"
+tokio = { version = "1.48.0", features = ["io-std", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
