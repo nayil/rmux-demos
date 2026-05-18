@@ -2,7 +2,11 @@
 
 本物のターミナルアプリ向けの Playwright 風テストです。
 
-runner は 2 つのターミナルを開きます。片方はライブのテストチェックリスト、もう片方は本物の rmux pane に描画された模擬 Web ページです。
+デモは 2 つのターミナルを開きます。1 つはライブで動くテストランナー、もう 1 つは本物の rmux pane に描画された simulated web page です。
+
+## 必要なもの
+
+`rmux` が `PATH` から実行できる必要があります。
 
 ## 実行
 
@@ -12,7 +16,7 @@ cargo run -- smoke
 cargo run
 ```
 
-runner は `rmux` を入力し、`[ Run ]` をクリックし、quiet state を待ってから次を検証します。
+runner は `rmux` と入力し、`[ Run ]` をクリックし、terminal が quiet になるのを待って、次を期待します。
 
 ```text
 Result: Hello rmux

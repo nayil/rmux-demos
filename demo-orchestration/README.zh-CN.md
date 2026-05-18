@@ -2,16 +2,32 @@
 
 Claude 通过 rmux 控制其他 AI agent。
 
-启动脚本会打开四个终端窗口：Codex、Gemini、Grok 和 Claude。Claude 会拿到必要上下文，用 rmux 给其他 agent 发送输入并读取它们的 pane。
+启动器会打开四个终端窗口：Codex、Gemini、Grok 和 Claude。Claude 会拿到 rmux 上下文，用来向其他 agent 发送输入并读取它们的 pane。
 
-## 运行
+## 要求
+
+`PATH` 中必须可用 `rmux`、`claude`、`codex`、`gemini` 和 `grok`。
+
+## Safety Warning
+
+> [!WARNING]
+> For testing purposes, this demo starts AI CLIs with approval or sandbox bypass flags. Be careful with the commands you run, and only use this demo in directories you trust.
+
+## Linux 和 macOS
 
 ```bash
 ./launch.sh check
 ./launch.sh
 ```
 
-在 Claude 窗口中尝试：
+## Windows PowerShell
+
+```powershell
+.\launch.ps1 check
+.\launch.ps1
+```
+
+## 在 Claude 中尝试
 
 ```text
 Send Hi to all agents
@@ -20,8 +36,14 @@ Read all agents and summarize what they answered
 
 ## 清理
 
+Linux 和 macOS：
+
 ```bash
 ./launch.sh cleanup
 ```
 
-需要 `rmux`、`claude`、`codex`、`gemini` 和 `grok` 在 `PATH` 中。
+Windows PowerShell：
+
+```powershell
+.\launch.ps1 cleanup
+```

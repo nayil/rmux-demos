@@ -2,7 +2,17 @@
 
 浏览器和终端连接到同一个 rmux pane。
 
-演示会启动一个小的 WebSocket bridge。你可以在浏览器或终端输入，两边会保持同步。
+demo 会启动一个小型 WebSocket bridge。在浏览器或终端中输入，两边都会保持同步。
+
+## 要求
+
+- `PATH` 中可用的 `rmux`
+- `PATH` 中可用的 `claude`，或者用 `RMUX_WEB_CMD` 指定其他命令
+
+## Safety Warning
+
+> [!WARNING]
+> For testing purposes, the default Claude command uses approval or sandbox bypass flags. Be careful with the commands you run, and only use this demo in directories you trust.
 
 ## 运行
 
@@ -17,12 +27,12 @@ cargo run
 http://127.0.0.1:8080
 ```
 
-如果使用同一 Wi-Fi 上的 iPhone，请使用本机局域网 IP。
+同一 Wi-Fi 上的手机可以使用这台机器的局域网 IP。
 
 ## 选项
 
 ```bash
-RMUX_WEB_CMD='claude || exec bash'
+RMUX_WEB_CMD='IS_DEMO=1 claude --dangerously-skip-permissions --permission-mode bypassPermissions || exec bash'
 PORT=8080
 ```
 

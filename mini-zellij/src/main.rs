@@ -33,16 +33,19 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 const SESSION: &str = "mini-zellij";
+const SDK_DAEMON_BINARY_ENV: &str = "RMUX_SDK_DAEMON_BINARY";
+const WINDOWS_PIPE: &str = r"\\.\pipe\rmux-demo-mini-zellij";
 const ZELLIJ_SESSION: &str = "quiet-weasel";
 const BAR_BG: Color = Color::Black;
-const PANE_BG: Color = Color::Rgb(24, 24, 37);
-const TEXT: Color = Color::Rgb(205, 214, 244);
-const MUTED: Color = Color::Rgb(108, 112, 134);
+const PANE_BG: Color = Color::Indexed(235);
+const TEXT: Color = Color::Indexed(189);
+const MUTED: Color = Color::Indexed(245);
 const GREEN: Color = Color::Indexed(154);
-const ORANGE: Color = Color::Rgb(249, 158, 31);
-const TAG_FG: Color = Color::Rgb(17, 17, 27);
-const TAG_BG: Color = Color::Rgb(196, 200, 210);
-const KEY_RED: Color = Color::Rgb(205, 0, 20);
+const ORANGE: Color = Color::Indexed(214);
+const TAG_FG: Color = Color::Indexed(233);
+const TAG_BG: Color = Color::Indexed(251);
+const KEY_RED: Color = Color::Indexed(160);
+const BASE_BG: Color = Color::Indexed(238);
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -90,10 +93,15 @@ struct App {
 }
 
 fn main() -> Result<()> {
+    force_path_rmux_binary();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async_main())
+}
+
+fn force_path_rmux_binary() {
+    env::set_var(SDK_DAEMON_BINARY_ENV, "rmux");
 }
 
 async fn async_main() -> Result<()> {
@@ -127,8 +135,7 @@ async fn run_app() -> Result<()> {
 
 impl App {
     async fn new() -> Result<Self> {
-        let rmux = Rmux::builder()
-            .unix_socket(demo_socket_path()?)
+        let rmux = demo_rmux_builder()?
             .default_timeout(Duration::from_secs(3))
             .connect_or_start()
             .await?;
@@ -481,7 +488,7 @@ fn draw_top_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
         let right = Line::from(vec![
             Span::styled("Alt <[]>", zstyle(ORANGE, BAR_BG)),
             zsep(),
-            Span::styled(" BASE ", zstyle(TEXT, Color::Rgb(64, 65, 76))),
+            Span::styled(" BASE ", zstyle(TEXT, BASE_BG)),
             zsep(),
         ]);
         frame.render_widget(
@@ -800,14 +807,9 @@ fn spawn_render_task(
         let Ok(mut stream) = pane.render_stream().await else {
             return;
         };
-        loop {
-            match stream.next().await {
-                Ok(Some(update)) => {
-                    if tx.send((index, update)).is_err() {
-                        break;
-                    }
-                }
-                Ok(None) | Err(_) => break,
+        while let Ok(Some(update)) = stream.next().await {
+            if tx.send((index, update)).is_err() {
+                break;
             }
         }
     })
@@ -818,8 +820,10 @@ fn shell_work_dir() -> PathBuf {
 }
 
 fn zellij_pane_title() -> String {
-    let user = env::var("USER").unwrap_or_else(|_| "pingu".to_owned());
-    let host = hostname().unwrap_or_else(|| "IglooPC".to_owned());
+    let user = env::var("USER")
+        .or_else(|_| env::var("USERNAME"))
+        .unwrap_or_else(|_| "user".to_owned());
+    let host = hostname().unwrap_or_else(|| "host".to_owned());
     let cwd = display_cwd(&shell_work_dir());
     format!(" {user}@{host}: {cwd} ")
 }
@@ -883,6 +887,16 @@ fn check_commands() -> Result<()> {
 }
 
 fn command_exists(command: &str) -> bool {
+    if env::consts::OS == "windows" {
+        return Command::new("where.exe")
+            .arg(command)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+    }
+
     Command::new("sh")
         .arg("-lc")
         .arg(format!("command -v {command}"))
@@ -894,8 +908,7 @@ fn command_exists(command: &str) -> bool {
 }
 
 async fn cleanup() -> Result<()> {
-    let rmux = Rmux::builder()
-        .unix_socket(demo_socket_path()?)
+    let rmux = demo_rmux_builder()?
         .default_timeout(Duration::from_secs(2))
         .connect_or_start()
         .await?;
@@ -905,6 +918,15 @@ async fn cleanup() -> Result<()> {
     let _ = rmux.shutdown().await;
     println!("mini-zellij rmux session cleaned up");
     Ok(())
+}
+
+fn demo_rmux_builder() -> Result<rmux_sdk::RmuxBuilder> {
+    let builder = Rmux::builder();
+    if env::consts::OS == "windows" {
+        Ok(builder.windows_pipe(WINDOWS_PIPE))
+    } else {
+        Ok(builder.unix_socket(demo_socket_path()?))
+    }
 }
 
 struct TerminalRestore;

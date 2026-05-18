@@ -1,8 +1,12 @@
 # terminal-playwright-demo
 
-Des tests Playwright-style pour de vraies applications terminal.
+Tests Playwright-style pour de vraies apps terminal.
 
-Le runner ouvre deux terminaux: un affiche la checklist de tests en live, l'autre affiche une page web simulee rendue dans un vrai pane rmux.
+La demo ouvre deux terminaux: un test runner anime en live, et une page web simulee rendue dans un vrai pane rmux.
+
+## Prerequis
+
+`rmux` doit etre disponible dans le `PATH`.
 
 ## Lancer
 
@@ -12,13 +16,13 @@ cargo run -- smoke
 cargo run
 ```
 
-Le runner tape `rmux`, clique sur `[ Run ]`, attend le quiet state, puis verifie:
+Le runner tape `rmux`, clique `[ Run ]`, attend un terminal calme, puis verifie:
 
 ```text
 Result: Hello rmux
 ```
 
-## Nettoyer
+## Nettoyage
 
 ```bash
 cargo run -- cleanup

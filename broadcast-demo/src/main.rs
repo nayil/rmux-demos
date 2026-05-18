@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
@@ -24,15 +24,18 @@ use ratatui::{
 };
 use ratatui_rmux::{cell_style, glyph_symbol, PaneDriver};
 use rmux_sdk::{
-    EnsureSession, Pane, PaneCell, PaneColor, PaneSet, PaneSnapshot, RenderUpdate, Rmux, Session,
-    SessionName, SplitDirection, TerminalSizeSpec,
+    EnsureSession, Input, Pane, PaneCell, PaneColor, PaneOutputChunk, PaneSet, PaneSnapshot,
+    RenderUpdate, Rmux, Session, SessionName, SplitDirection, TerminalSizeSpec,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
 
 const SESSION: &str = "broadcast-demo";
+const SDK_DAEMON_BINARY_ENV: &str = "RMUX_SDK_DAEMON_BINARY";
+const WINDOWS_PIPE: &str = r"\\.\pipe\rmux-demo-broadcast";
 const SPINNER: &[&str] = &["|", "/", "-", "\\"];
-const LEADING_NOISE_CHARS: &str = "●•✓◆■✻✽✶✢⠋⠙⠹⠸⠼⠴⠦⠧⠇⠃┃│>❯›-\\/|";
+const AGENT_REPLY_DIRECTIVE: &str = "Reply directly in one short sentence. Do not use tools.";
+const LEADING_NOISE_CHARS: &str = "●•✓◆✦■✻✽✶✢⠋⠙⠹⠸⠼⠴⠦⠧⠇⠃┃│>❯›-\\/|";
 const UI_FRAME_CHARS: &str = "│─╭╮╰╯┌┐└┘╎╏┃";
 const STATUS_PREFIXES: &str = "[⇣◉⠋⠙⠹⠸⠼⠴⠦⠧⠇⠃";
 const VIBE_EXCLUDED_CHARS: &str = "✓◆▶⎣│─╭╮╰╯┌┐└┘┃";
@@ -48,26 +51,26 @@ const AGENTS: &[Agent] = &[
             "bypassPermissions",
         ],
         &["Enter"],
-        Color::Rgb(255, 129, 102),
+        Color::Indexed(209),
     ),
     agent(
         "Codex",
         &["codex", "--dangerously-bypass-approvals-and-sandbox"],
         &["Enter"],
-        Color::Rgb(77, 171, 247),
+        Color::Indexed(75),
     ),
     agent(
         "Gemini",
         &["gemini", "--skip-trust", "--approval-mode", "yolo"],
         &[],
-        Color::Rgb(137, 180, 250),
+        Color::Indexed(111),
     ),
-    agent("Vibe", &["vibe", "--trust"], &[], Color::Rgb(166, 227, 161)),
+    agent("Vibe", &["vibe", "--trust"], &[], Color::Indexed(120)),
     agent(
         "Grok",
         &["grok", "--always-approve"],
         &[],
-        Color::Rgb(249, 226, 175),
+        Color::Indexed(222),
     ),
 ];
 
@@ -98,6 +101,7 @@ struct AgentPane {
     driver: PaneDriver,
     logo: Option<CapturedLogo>,
     output_baseline: Option<Vec<String>>,
+    output_lines: Vec<String>,
 }
 
 struct CapturedLogo {
@@ -111,7 +115,12 @@ struct LogoCell {
     blank: bool,
 }
 
-type RenderMessage = (usize, RenderUpdate);
+enum AgentUpdate {
+    Snapshot(RenderUpdate),
+    OutputLine(String),
+}
+
+type RenderMessage = (usize, AgentUpdate);
 
 struct App {
     rmux: Option<Rmux>,
@@ -127,6 +136,7 @@ struct App {
     status: String,
     frame: u64,
     last_logo_refresh: Instant,
+    last_output_refresh: Instant,
     last_prompt_dismissal: Instant,
 }
 
@@ -134,6 +144,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    force_path_rmux_binary();
     match env::args().nth(1).as_deref() {
         Some("check") => check_commands(),
         Some("cleanup") => cleanup().await,
@@ -144,6 +155,10 @@ async fn main() -> Result<()> {
         }
         None => run_app().await,
     }
+}
+
+fn force_path_rmux_binary() {
+    env::set_var(SDK_DAEMON_BINARY_ENV, "rmux");
 }
 
 async fn run_app() -> Result<()> {
@@ -160,8 +175,7 @@ async fn run_app() -> Result<()> {
 
 impl App {
     async fn new() -> Result<Self> {
-        let rmux = Rmux::builder()
-            .unix_socket(demo_socket_path()?)
+        let rmux = demo_rmux_builder()?
             .default_timeout(Duration::from_secs(3))
             .connect_or_start()
             .await?;
@@ -184,14 +198,26 @@ impl App {
         let root = session.pane(0, 0);
         root.resize(TerminalSizeSpec::new(cols.max(240), rows.max(120)))
             .await?;
+        let agents = selected_agents()?;
+        let root = stable_pane(&session, &root, agents[0]).await?;
 
-        let second = split_agent(&root, SplitDirection::Right, AGENTS[1], &work_dir).await?;
-        split_agent(&second, SplitDirection::Right, AGENTS[2], &work_dir).await?;
-        split_agent(&root, SplitDirection::Down, AGENTS[3], &work_dir).await?;
-        split_agent(&second, SplitDirection::Down, AGENTS[4], &work_dir).await?;
-        launch_agent(&root, AGENTS[0], &work_dir).await?;
+        let second = split_agent(&root, SplitDirection::Right, agents[1], &work_dir).await?;
+        let second = stable_pane(&session, &second, agents[1]).await?;
+        let third = split_agent(&second, SplitDirection::Right, agents[2], &work_dir).await?;
+        let third = stable_pane(&session, &third, agents[2]).await?;
+        let fourth = split_agent(&root, SplitDirection::Down, agents[3], &work_dir).await?;
+        let fourth = stable_pane(&session, &fourth, agents[3]).await?;
+        let fifth = split_agent(&second, SplitDirection::Down, agents[4], &work_dir).await?;
+        let fifth = stable_pane(&session, &fifth, agents[4]).await?;
+        launch_agent(&root, agents[0], &work_dir).await?;
 
-        let panes = discover_agent_panes(&rmux).await?;
+        let panes = vec![
+            (agents[0], root.clone()),
+            (agents[1], second),
+            (agents[2], third),
+            (agents[3], fourth),
+            (agents[4], fifth),
+        ];
 
         for (agent, pane) in &panes {
             send_startup_keys(pane, *agent).await?;
@@ -206,12 +232,14 @@ impl App {
             let mut driver = PaneDriver::new(pane.clone());
             let _ = driver.refresh().await;
             let logo = extract_logo(agent, &driver.state().snapshot);
-            render_tasks.push(spawn_render_task(index, pane, render_tx.clone()));
+            render_tasks.push(spawn_render_task(index, pane.clone(), render_tx.clone()));
+            render_tasks.push(spawn_line_task(index, pane, render_tx.clone()));
             agent_panes.push(AgentPane {
                 agent,
                 driver,
                 logo,
                 output_baseline: None,
+                output_lines: Vec::new(),
             });
         }
         drop(render_tx);
@@ -230,6 +258,7 @@ impl App {
             status: "ready: type locally, Enter broadcasts once, Esc/Ctrl-C quits".to_owned(),
             frame: 0,
             last_logo_refresh: Instant::now(),
+            last_output_refresh: Instant::now(),
             last_prompt_dismissal: Instant::now(),
         })
     }
@@ -248,13 +277,28 @@ impl App {
     }
 
     fn drain_render_updates(&mut self) {
-        while let Ok(message) = self.render_updates.try_recv() {
-            let Some(pane) = self.panes.get_mut(message.0) else {
+        while let Ok((index, update)) = self.render_updates.try_recv() {
+            let Some(pane) = self.panes.get_mut(index) else {
                 continue;
             };
-            pane.driver.apply_snapshot(message.1.into_snapshot());
-            if self.last_prompt.is_none() {
-                update_best_logo(pane);
+            match update {
+                AgentUpdate::Snapshot(update) => {
+                    pane.driver.apply_snapshot(update.into_snapshot());
+                    if let Some(prompt) = self.last_prompt.as_deref() {
+                        if self.active_targets.contains(&index) {
+                            remember_visible_output(pane, prompt);
+                        }
+                    } else {
+                        update_best_logo(pane);
+                    }
+                }
+                AgentUpdate::OutputLine(line) => {
+                    if let Some(prompt) = self.last_prompt.as_deref() {
+                        if self.active_targets.contains(&index) {
+                            remember_output_text(pane, prompt, &line);
+                        }
+                    }
+                }
             }
         }
     }
@@ -277,6 +321,27 @@ impl App {
         }
     }
 
+    async fn refresh_active_outputs(&mut self) {
+        let Some(prompt) = self.last_prompt.clone() else {
+            return;
+        };
+        if self.last_output_refresh.elapsed() < Duration::from_millis(250) {
+            return;
+        }
+
+        self.last_output_refresh = Instant::now();
+        for index in self.active_targets.clone() {
+            let Some(pane) = self.panes.get_mut(index) else {
+                continue;
+            };
+            let Ok(snapshot) = pane.driver.pane().snapshot().await else {
+                continue;
+            };
+            pane.driver.apply_snapshot(snapshot);
+            remember_visible_output(pane, &prompt);
+        }
+    }
+
     async fn dismiss_blocking_agent_prompts(&mut self) {
         if self.last_prompt.is_none()
             || self.last_prompt_dismissal.elapsed() < Duration::from_millis(250)
@@ -295,22 +360,28 @@ impl App {
 
     async fn send_prompt_to_targets(&mut self, targets: &[usize], prompt: &str) -> bool {
         self.capture_output_baselines().await;
-        let panes = self.target_panes(targets);
-        if panes.is_empty() {
+        let agent_panes = self.target_agent_panes(targets);
+        if agent_panes.is_empty() {
             self.status = "broadcast error: no target pane selected".to_owned();
             return false;
         }
 
-        let keyboard = PaneSet::new(panes).keyboard();
-        let sent = async {
-            keyboard.type_text(prompt).await?;
-            tokio::time::sleep(Duration::from_millis(250)).await;
-            keyboard.press("Enter").await
+        self.last_prompt = Some(prompt.to_owned());
+        self.active_targets = targets.to_vec();
+        self.sent_frame = Some(self.frame);
+        self.prompt.clear();
+        self.status = match self.focused_agent_title() {
+            Some(title) => format!("sent to {title}"),
+            None => "sent to all agents".to_owned(),
         };
-        if let Err(error) = sent.await {
-            self.status = format!("broadcast error: {error}");
-            return false;
-        }
+
+        let prompt = prompt.to_owned();
+        self.render_tasks.push(tokio::spawn(async move {
+            for (agent, pane) in &agent_panes {
+                let _ = send_prompt_to_agent(*agent, pane, &prompt).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }));
         true
     }
 
@@ -320,14 +391,15 @@ impl App {
                 pane.driver.apply_snapshot(snapshot);
             }
             pane.output_baseline = Some(snapshot_rows(&pane.driver.state().snapshot));
+            pane.output_lines.clear();
         }
     }
 
-    fn target_panes(&self, targets: &[usize]) -> Vec<Pane> {
+    fn target_agent_panes(&self, targets: &[usize]) -> Vec<(Agent, Pane)> {
         targets
             .iter()
             .filter_map(|index| self.panes.get(*index))
-            .map(|pane| pane.driver.pane().clone())
+            .map(|pane| (pane.agent, pane.driver.pane().clone()))
             .collect()
     }
 
@@ -407,17 +479,10 @@ impl App {
                 let prompt = self.prompt.trim().to_owned();
                 if !prompt.is_empty() {
                     let targets = self.prompt_targets();
-                    if self.send_prompt_to_targets(&targets, &prompt).await {
-                        self.last_prompt = Some(prompt);
-                        self.active_targets = targets;
-                        self.sent_frame = Some(self.frame);
-                        self.status = match self.focused_agent_title() {
-                            Some(title) => format!("sent to {title}"),
-                            None => "sent to all agents".to_owned(),
-                        };
-                    }
+                    self.send_prompt_to_targets(&targets, &prompt).await;
+                } else {
+                    self.prompt.clear();
                 }
-                self.prompt.clear();
                 false
             }
             _ => false,
@@ -442,6 +507,7 @@ async fn run_tui(app: &mut App) -> Result<()> {
     loop {
         app.drain_render_updates();
         app.refresh_startup_logos().await;
+        app.refresh_active_outputs().await;
         app.dismiss_blocking_agent_prompts().await;
         app.frame = app.frame.wrapping_add(1);
         terminal.draw(|frame| draw(frame, app))?;
@@ -560,31 +626,43 @@ fn draw_agent(frame: &mut Frame<'_>, area: Rect, index: usize, pane: &AgentPane,
     });
     let mut lines = Vec::new();
 
-    if let Some(logo) = &pane.logo {
-        lines.extend(render_logo_lines(logo));
-    } else {
-        lines.push(Line::from(Span::styled(
-            "capturing native startup mark",
-            fg(Color::DarkGray),
-        )));
-    }
-
-    lines.push(Line::raw(""));
     let receives_staged_prompt = app
         .focused_agent
         .map(|focused| focused == index)
         .unwrap_or(true);
     let received_last_prompt = app.active_targets.contains(&index);
+    let after_send = app.last_prompt.is_some() && app.prompt.is_empty() && received_last_prompt;
+
+    let mut logo_lines = if let Some(logo) = &pane.logo {
+        render_logo_lines(logo)
+    } else if pane.agent.title == "Claude" {
+        claude_fallback_logo_lines(pane.agent.accent)
+    } else {
+        vec![Line::from(Span::styled(
+            "capturing native startup mark",
+            fg(Color::DarkGray),
+        ))]
+    };
+    if after_send {
+        logo_lines.truncate(usize::from(inner.height / 3).max(1));
+    }
+    lines.extend(logo_lines);
+
+    lines.push(Line::raw(""));
     if let Some(last_prompt) = app.last_prompt.as_deref() {
         if !app.prompt.is_empty() && receives_staged_prompt {
             lines.push(prompt_echo_line(&app.prompt, pane.agent.accent));
         } else if app.prompt.is_empty() && received_last_prompt {
-            let output_lines = live_output_lines(
+            let keep_spinner_visible = app
+                .sent_frame
+                .map(|sent_frame| app.frame.saturating_sub(sent_frame) < 15)
+                .unwrap_or(false);
+            let output_lines = render_output_lines(
                 pane,
                 last_prompt,
                 inner.height.saturating_sub(lines.len() as u16) as usize,
             );
-            if output_lines.is_empty() {
+            if keep_spinner_visible || output_lines.is_empty() {
                 lines.push(status_line(pane, app.frame));
             } else {
                 lines.extend(output_lines);
@@ -603,6 +681,7 @@ fn draw_agent(frame: &mut Frame<'_>, area: Rect, index: usize, pane: &AgentPane,
     for _ in 0..top_padding {
         lines.insert(0, Line::raw(""));
     }
+    trim_lines_to_height(&mut lines, inner.height);
 
     if focused {
         frame.render_widget(Paragraph::new("").style(panel_style), inner);
@@ -668,11 +747,8 @@ fn hit_test_agent(column: u16, row: u16, agent_area: Rect) -> Option<usize> {
         .position(|agent_area| rect_contains(*agent_area, column, row))
 }
 
-fn selected_background(accent: Color) -> Color {
-    match accent {
-        Color::Rgb(red, green, blue) => Color::Rgb(red / 4, green / 4, blue / 4),
-        _ => Color::Rgb(24, 24, 24),
-    }
+fn selected_background(_accent: Color) -> Color {
+    Color::Indexed(235)
 }
 
 fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
@@ -707,6 +783,13 @@ fn render_logo_lines(logo: &CapturedLogo) -> Vec<Line<'static>> {
         .collect()
 }
 
+fn claude_fallback_logo_lines(accent: Color) -> Vec<Line<'static>> {
+    vec![
+        Line::from(Span::styled("✻", bold_fg(accent))),
+        Line::from(Span::styled("Claude Code", bold_fg(accent))),
+    ]
+}
+
 fn update_best_logo(pane: &mut AgentPane) {
     let Some(candidate) = extract_logo(pane.agent, &pane.driver.state().snapshot) else {
         return;
@@ -735,6 +818,50 @@ fn status_line(pane: &AgentPane, frame: u64) -> Line<'static> {
     Line::from(Span::styled(text, fg(Color::DarkGray)))
 }
 
+async fn send_prompt_to_agent(agent: Agent, pane: &Pane, prompt: &str) -> Result<()> {
+    let prompt = agent_prompt(prompt);
+    if agent_uses_gemini(agent) {
+        type_text_slowly(pane, &gemini_safe_prompt(prompt)).await?;
+    } else {
+        PaneSet::new(vec![pane.clone()])
+            .broadcast(Input::text(&bracketed_paste(&prompt)))
+            .await?;
+    }
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    pane.keyboard().press("Enter").await?;
+    Ok(())
+}
+
+fn agent_prompt(prompt: &str) -> String {
+    format!("{} {}", prompt.trim(), AGENT_REPLY_DIRECTIVE)
+}
+
+fn gemini_safe_prompt(prompt: String) -> String {
+    format!(" {}", prompt.replace('!', "！"))
+}
+
+async fn type_text_slowly(pane: &Pane, text: &str) -> Result<()> {
+    for ch in text.chars() {
+        pane.keyboard().type_text(ch.to_string()).await?;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    Ok(())
+}
+
+fn trim_lines_to_height(lines: &mut Vec<Line<'static>>, height: u16) {
+    let height = usize::from(height);
+    if height == 0 {
+        lines.clear();
+        return;
+    }
+
+    let excess = lines.len().saturating_sub(height);
+    if excess > 0 {
+        lines.drain(0..excess);
+    }
+}
+
 fn animated_top_padding(
     available_height: u16,
     line_count: usize,
@@ -755,11 +882,69 @@ fn animated_top_padding(
     }
 }
 
-fn live_output_lines(pane: &AgentPane, prompt: &str, max_lines: usize) -> Vec<Line<'static>> {
+fn remember_visible_output(pane: &mut AgentPane, prompt: &str) {
+    for line in visible_output_text(pane, prompt) {
+        remember_filtered_output(pane, line);
+    }
+}
+
+fn remember_output_text(pane: &mut AgentPane, prompt: &str, text: &str) {
+    let text = clean_stream_text(text);
+    let Some(text) = normalize_output_line(&text, prompt) else {
+        return;
+    };
+    if should_render_output_line(&text, prompt) {
+        remember_filtered_output(pane, text);
+    }
+}
+
+fn remember_filtered_output(pane: &mut AgentPane, line: String) {
+    if pane
+        .output_lines
+        .iter()
+        .any(|seen| seen == &line || seen.contains(&line))
+    {
+        return;
+    }
+
+    if let Some(existing) = pane
+        .output_lines
+        .iter_mut()
+        .find(|seen| line.contains(seen.as_str()))
+    {
+        *existing = line;
+    } else {
+        pane.output_lines.push(line);
+    }
+
+    let excess = pane.output_lines.len().saturating_sub(8);
+    if excess > 0 {
+        pane.output_lines.drain(0..excess);
+    }
+}
+
+fn render_output_lines(pane: &AgentPane, prompt: &str, max_lines: usize) -> Vec<Line<'static>> {
     if max_lines == 0 {
         return Vec::new();
     }
 
+    let lines = if pane.output_lines.is_empty() {
+        visible_output_text(pane, prompt)
+    } else {
+        pane.output_lines.clone()
+    };
+    if lines.is_empty() {
+        return Vec::new();
+    }
+
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..]
+        .iter()
+        .map(|line| Line::from(Span::styled(line.clone(), fg(Color::Gray))))
+        .collect()
+}
+
+fn visible_output_text(pane: &AgentPane, prompt: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let snapshot = &pane.driver.state().snapshot;
     for row in 0..snapshot.rows {
@@ -783,16 +968,7 @@ fn live_output_lines(pane: &AgentPane, prompt: &str, max_lines: usize) -> Vec<Li
             lines.push(text);
         }
     }
-
-    if lines.is_empty() {
-        return Vec::new();
-    }
-
-    let start = lines.len().saturating_sub(max_lines);
-    lines[start..]
-        .iter()
-        .map(|line| Line::from(Span::styled(line.clone(), fg(Color::Gray))))
-        .collect()
+    lines
 }
 
 fn snapshot_rows(snapshot: &PaneSnapshot) -> Vec<String> {
@@ -814,6 +990,86 @@ fn clean_snapshot_text(text: &str) -> String {
         .collect::<String>()
         .trim()
         .to_owned()
+}
+
+fn clean_stream_text(text: &str) -> String {
+    let mut cleaned = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            skip_escape_sequence(&mut chars);
+        } else if !ch.is_control() {
+            cleaned.push(ch);
+        }
+    }
+    cleaned.trim().to_owned()
+}
+
+fn clean_stream_text_with_breaks(text: &str) -> String {
+    let mut cleaned = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            skip_escape_sequence(&mut chars);
+            cleaned.push('\n');
+        } else if ch == '\r' || ch == '\n' {
+            cleaned.push('\n');
+        } else if ch == '\t' {
+            cleaned.push(' ');
+        } else if !ch.is_control() {
+            cleaned.push(ch);
+        }
+    }
+    cleaned
+}
+
+fn stream_candidate_lines(text: &str) -> Vec<String> {
+    clean_stream_text_with_breaks(text)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn skip_escape_sequence<I>(chars: &mut std::iter::Peekable<I>)
+where
+    I: Iterator<Item = char>,
+{
+    match chars.peek().copied() {
+        Some('[') => {
+            chars.next();
+            for ch in chars.by_ref() {
+                if ('@'..='~').contains(&ch) {
+                    break;
+                }
+            }
+        }
+        Some(']') => {
+            chars.next();
+            let mut previous_was_escape = false;
+            for ch in chars.by_ref() {
+                if ch == '\u{7}' || (previous_was_escape && ch == '\\') {
+                    break;
+                }
+                previous_was_escape = ch == '\x1b';
+            }
+        }
+        Some('P' | '_' | '^') => {
+            chars.next();
+            let mut previous_was_escape = false;
+            for ch in chars.by_ref() {
+                if previous_was_escape && ch == '\\' {
+                    break;
+                }
+                previous_was_escape = ch == '\x1b';
+            }
+        }
+        Some(_) => {
+            chars.next();
+        }
+        None => {}
+    }
 }
 
 fn normalize_output_line(text: &str, prompt: &str) -> Option<String> {
@@ -839,6 +1095,13 @@ fn normalize_output_line(text: &str, prompt: &str) -> Option<String> {
         return None;
     }
 
+    if let Some(rest) = strip_thought_status(&text) {
+        text = strip_clock_stamps(rest);
+        if text.is_empty() {
+            return None;
+        }
+    }
+
     if text.starts_with("[✗]") || text.starts_with("[✓]") {
         return None;
     }
@@ -850,11 +1113,29 @@ fn normalize_output_line(text: &str, prompt: &str) -> Option<String> {
     }
 
     let lower = text.to_ascii_lowercase();
-    if is_prompt_echo(&lower, prompt) || is_repeated_prompt_echo(&lower, prompt) {
+    if is_prompt_echo(&lower, prompt)
+        || is_repeated_prompt_echo(&lower, prompt)
+        || is_agent_directive_echo(&lower, prompt)
+        || is_partial_agent_prompt_echo(&lower, prompt)
+    {
         return None;
     }
 
     Some(text)
+}
+
+fn strip_thought_status(text: &str) -> Option<&str> {
+    let lower = text.to_ascii_lowercase();
+    let index = lower.find("thought for")?;
+    let after = &text[index + "thought for".len()..];
+    let rest = after.trim_start_matches(|ch: char| {
+        ch.is_whitespace() || ch.is_ascii_digit() || matches!(ch, '.' | ':' | 's' | 'S')
+    });
+    if rest.trim().is_empty() {
+        None
+    } else {
+        Some(rest.trim())
+    }
 }
 
 fn strip_clock_stamps(text: &str) -> String {
@@ -930,11 +1211,15 @@ fn should_render_output_line(text: &str, prompt: &str) -> bool {
     }
 
     let lower = text.to_ascii_lowercase();
-    if is_prompt_echo(&lower, prompt) || is_repeated_prompt_echo(&lower, prompt) {
+    if is_prompt_echo(&lower, prompt)
+        || is_repeated_prompt_echo(&lower, prompt)
+        || is_agent_directive_echo(&lower, prompt)
+        || is_partial_agent_prompt_echo(&lower, prompt)
+    {
         return false;
     }
 
-    const NOISE: &str = "openai codex|welcome back|recent activity|no recent activity|workspace|sandbox|quota|tokens|model|signed in|plan:|type your message|try \"|for shortcuts|bypass permissions|press enter|do you trust|working with untrusted|claude.md|gemini.md|approval|auth|default|rmux broadcast|rmux-broadcast-demo-work|prompt >|bash:|run /review|implement {feature}|{feature}|find and fix a bug|summarize recent commits|@filename|running command|current changes|directory:|permissions:|permission for the|bash tool|allow for remainder|enter select|esc reject|↑↓ navigate|tip:|yolo|ctrl+y|claude code|gemini cli|mistral vibe|scale plan|hello. what can i help you with|i'm here to help with your coding tasks|what do you need|thought|creating|generating|waiting|thinking|responding|turn completed|completed in|type /help|use /skills|shift+tab|shortcuts|interrupt|mcp server|previous session|session history|gpt-|mistral-|the user said|simple greeting|friendly|concise|emoji|instruction|greeting the user|esc to cancel|readfolder|directory is empty|empty workspace|peer programmer|esc/|ctrl+|/tmp/";
+    const NOISE: &str = "openai codex|welcome back|recent activity|no recent activity|sandbox|quota|tokens|model|signed in|plan:|type your message|try \"|for shortcuts|bypass permissions|press enter|do you trust|working with untrusted|claude.md|gemini.md|approval|auth|default|rmux broadcast|rmux-broadcast-demo-work|prompt >|bash:|run /review|implement {feature}|{feature}|find and fix a bug|summarize recent commits|@filename|running command|current changes|directory:|permissions:|permission for the|bash tool|allow for remainder|enter select|esc reject|↑↓ navigate|tip:|yolo|ctrl+y|claude code|gemini cli|mistral vibe|scale plan|hello. what can i help you with|i'm here to help with your coding tasks|what do you need|creating|generating|waiting|thinking|responding|turn completed|completed in|type /help|use /skills|shift+tab|shortcuts|interrupt|mcp server|previous session|session history|gpt-|mistral-|the user said|the user is|simple greeting|friendly|concise|emoji|instruction|greeting the user|greeting me|asking me|this is a|casual|conversational|not a software|engineering task|respond politely|straightforward greeting|acknowledging user|confirming project|reply directly|one short sentence|do not use tools|esc to cancel|readfolder|directory is empty|empty workspace|peer programmer|esc/|ctrl+|/tmp/";
     if NOISE.split('|').any(|needle| lower.contains(needle)) {
         return false;
     }
@@ -987,6 +1272,33 @@ fn is_repeated_prompt_echo(lower_text: &str, prompt: &str) -> bool {
         .as_bytes()
         .chunks(normalized_prompt.len())
         .all(|chunk| chunk == normalized_prompt.as_bytes())
+}
+
+fn is_agent_directive_echo(lower_text: &str, prompt: &str) -> bool {
+    let prompt = prompt.trim().to_ascii_lowercase();
+    !prompt.is_empty()
+        && lower_text.contains(&prompt)
+        && lower_text.contains("reply directly")
+        && lower_text.contains("do not use tools")
+}
+
+fn is_partial_agent_prompt_echo(lower_text: &str, prompt: &str) -> bool {
+    let normalized_text = alphanumeric(lower_text);
+    if normalized_text.len() < 8 {
+        return false;
+    }
+    alphanumeric(&agent_prompt(prompt).to_ascii_lowercase()).contains(&normalized_text)
+}
+
+fn alphanumeric(text: &str) -> String {
+    text.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn bracketed_paste(text: &str) -> String {
+    let safe_text = text.replace("\x1b[201~", "");
+    format!("\x1b[200~{safe_text}\x1b[201~")
 }
 
 fn looks_like_clock_or_meter(lower: &str) -> bool {
@@ -1445,16 +1757,13 @@ fn cell_index(snapshot: &PaneSnapshot, row: u16, col: u16) -> Option<usize> {
     if row >= snapshot.rows || col >= snapshot.cols {
         return None;
     }
-    Some(
-        usize::from(row)
-            .checked_mul(usize::from(snapshot.cols))?
-            .checked_add(usize::from(col))?,
-    )
+    usize::from(row)
+        .checked_mul(usize::from(snapshot.cols))?
+        .checked_add(usize::from(col))
 }
 
 async fn cleanup() -> Result<()> {
-    let Ok(rmux) = Rmux::builder()
-        .unix_socket(demo_socket_path()?)
+    let Ok(rmux) = demo_rmux_builder()?
         .default_timeout(Duration::from_secs(3))
         .connect()
         .await
@@ -1476,36 +1785,67 @@ async fn cleanup() -> Result<()> {
 }
 
 fn check_commands() -> Result<()> {
-    let mut missing = Vec::new();
     if !command_exists("rmux") {
-        missing.push("rmux");
+        return Err("missing command in PATH: rmux".into());
     }
 
-    for agent in AGENTS {
-        if let Some(command) = agent
-            .command
-            .first()
-            .filter(|command| !command_exists(command))
-        {
-            missing.push(command);
-        }
+    let agents = selected_agents()?;
+    println!(
+        "rmux is available; using: {}",
+        agents
+            .iter()
+            .map(|agent| agent.title)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn selected_agents() -> Result<Vec<Agent>> {
+    let available = AGENTS
+        .iter()
+        .copied()
+        .filter(|agent| {
+            agent
+                .command
+                .first()
+                .map(|command| command_exists(command))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    if available.is_empty() {
+        return Err(format!(
+            "missing agent command in PATH: install at least one of {}",
+            AGENTS
+                .iter()
+                .filter_map(|agent| agent.command.first().copied())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .into());
     }
 
-    if missing.is_empty() {
-        println!("rmux and all agent commands are available");
-        Ok(())
-    } else {
-        Err(format!("missing commands in PATH: {}", missing.join(", ")).into())
+    let mut agents = available.clone();
+    while agents.len() < AGENTS.len() {
+        let next = available[agents.len() % available.len()];
+        agents.push(next);
     }
+    agents.truncate(AGENTS.len());
+    Ok(agents)
 }
 
 async fn launch_agent(pane: &Pane, agent: Agent, cwd: &Path) -> Result<()> {
-    pane.spawn(agent.command.iter().copied())
+    let mut spawn = pane
+        .spawn(agent.command.iter().copied())
         .cwd(cwd.to_path_buf())
         .kill_existing(true)
         .title(agent.title)
-        .keep_alive_on_exit(true)
-        .await?;
+        .keep_alive_on_exit(true);
+    if agent_uses_claude(agent) {
+        spawn = spawn.env("IS_DEMO", "1");
+    }
+    spawn.await?;
     Ok(())
 }
 
@@ -1515,22 +1855,32 @@ async fn split_agent(
     agent: Agent,
     cwd: &Path,
 ) -> Result<Pane> {
-    Ok(parent
+    let mut split = parent
         .split_with(direction)
         .spawn(agent.command.iter().copied())
         .cwd(cwd.to_path_buf())
         .title(agent.title)
-        .keep_alive_on_exit(true)
-        .await?)
+        .keep_alive_on_exit(true);
+    if agent_uses_claude(agent) {
+        split = split.env("IS_DEMO", "1");
+    }
+    Ok(split.await?)
 }
 
-async fn discover_agent_panes(rmux: &Rmux) -> Result<Vec<(Agent, Pane)>> {
-    let mut panes = Vec::with_capacity(AGENTS.len());
-    for agent in AGENTS {
-        let pane = rmux.get_pane_by_title(agent.title).await?;
-        panes.push((*agent, pane));
-    }
-    Ok(panes)
+fn agent_uses_claude(agent: Agent) -> bool {
+    agent.command.first() == Some(&"claude")
+}
+
+fn agent_uses_gemini(agent: Agent) -> bool {
+    agent.command.first() == Some(&"gemini")
+}
+
+async fn stable_pane(session: &Session, pane: &Pane, agent: Agent) -> Result<Pane> {
+    let pane_id = pane
+        .id()
+        .await?
+        .ok_or_else(|| format!("pane for {} disappeared after creation", agent.title))?;
+    Ok(session.pane_by_id(pane_id).await?)
 }
 
 fn spawn_render_task(
@@ -1542,14 +1892,57 @@ fn spawn_render_task(
         let Ok(mut stream) = pane.render_stream().await else {
             return;
         };
-        loop {
-            match stream.next().await {
-                Ok(Some(update)) => {
-                    if tx.send((index, update)).is_err() {
-                        break;
-                    }
+        while let Ok(Some(update)) = stream.next().await {
+            if tx.send((index, AgentUpdate::Snapshot(update))).is_err() {
+                break;
+            }
+        }
+    })
+}
+
+fn spawn_line_task(
+    index: usize,
+    pane: Pane,
+    tx: mpsc::UnboundedSender<RenderMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let Ok(mut stream) = pane.output_stream().await else {
+            return;
+        };
+        let mut pending = String::new();
+        while let Ok(Some(item)) = stream.next().await {
+            let PaneOutputChunk::Bytes { bytes, .. } = item else {
+                continue;
+            };
+            if bytes.is_empty() {
+                continue;
+            }
+
+            let text = String::from_utf8_lossy(&bytes);
+            for line in stream_candidate_lines(&text) {
+                if tx
+                    .send((index, AgentUpdate::OutputLine(line.clone())))
+                    .is_err()
+                {
+                    return;
                 }
-                Ok(None) | Err(_) => break,
+                pending.push_str(&line);
+                pending.push('\n');
+            }
+
+            if pending.len() > 4096 {
+                let keep_from = pending
+                    .char_indices()
+                    .rev()
+                    .map(|(index, _)| index)
+                    .find(|index| pending.len().saturating_sub(*index) >= 2048)
+                    .unwrap_or(0);
+                pending.drain(..keep_from);
+            }
+            for line in stream_candidate_lines(&pending) {
+                if tx.send((index, AgentUpdate::OutputLine(line))).is_err() {
+                    return;
+                }
             }
         }
     })
@@ -1580,12 +1973,31 @@ async fn send_startup_keys(pane: &Pane, agent: Agent) -> Result<()> {
 }
 
 fn command_exists(command: &str) -> bool {
+    if env::consts::OS == "windows" {
+        return Command::new("where.exe")
+            .arg(command)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+    }
+
     Command::new("sh")
         .arg("-lc")
         .arg(format!("command -v {command} >/dev/null 2>&1"))
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
+}
+
+fn demo_rmux_builder() -> Result<rmux_sdk::RmuxBuilder> {
+    let builder = Rmux::builder();
+    if env::consts::OS == "windows" {
+        Ok(builder.windows_pipe(WINDOWS_PIPE))
+    } else {
+        Ok(builder.unix_socket(demo_socket_path()?))
+    }
 }
 
 fn demo_work_dir() -> Result<PathBuf> {
@@ -1642,5 +2054,118 @@ mod tests {
             "I'm here to help with your coding tasks. What do you need?",
             "write a haiku"
         ));
+    }
+
+    #[test]
+    fn renders_real_agent_answers() {
+        assert!(should_render_output_line(
+            "I'm doing great, thanks! Ready to help",
+            "Hello how are you?"
+        ));
+        assert!(should_render_output_line(
+            "What are we working on today?",
+            "Hello how are you?"
+        ));
+    }
+
+    #[test]
+    fn extracts_cursor_drawn_agent_answers_from_raw_stream() {
+        let raw = concat!(
+            "\x1b[10;5H◆ Thought for 1.0s",
+            "\x1b[11;5HI'm doing well, thanks for asking! Ready  11:31 PM",
+            "\x1b[12;5Hto help with any software engineering"
+        );
+        let lines = stream_candidate_lines(raw);
+
+        assert!(lines
+            .iter()
+            .any(|line| should_render_output_line(line, "Hello how are you?")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("software engineering")));
+    }
+
+    #[test]
+    fn renders_grok_and_gemini_answer_fragments() {
+        assert_eq!(
+            normalize_output_line("◆ Thought for 0.6sI'm doing well, thanks.", "Hello"),
+            Some("I'm doing well, thanks.".to_owned())
+        );
+        assert!(should_render_output_line(
+            "you with your project today?",
+            "Hello how are you?"
+        ));
+        assert!(should_render_output_line(
+            "I am ready to assist you in the workspace.",
+            "Hello how are you?"
+        ));
+        assert_eq!(
+            normalize_output_line("✦ I am doing well, thank you.", "Hello"),
+            Some("I am doing well, thank you.".to_owned())
+        );
+        assert_eq!(
+            normalize_output_line(
+                "Hello how are you? Reply directly in one short sentence. Do not use tools.",
+                "Hello how are you?"
+            ),
+            None
+        );
+        assert_eq!(
+            normalize_output_line("you? Reply directl", "Hello how are you?"),
+            None
+        );
+        assert_eq!(
+            normalize_output_line("sentence. Do not use", "Hello how are you?"),
+            None
+        );
+        assert!(!should_render_output_line(
+            "The user is asking a casual greeting.",
+            "Hello how are you?"
+        ));
+    }
+
+    #[test]
+    fn claude_fallback_logo_uses_agent_accent() {
+        let lines = claude_fallback_logo_lines(AGENTS[0].accent);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].spans[0].content, "✻");
+        assert_eq!(lines[0].spans[0].style.fg, Some(AGENTS[0].accent));
+        assert!(lines[0].spans[0]
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn prompt_input_uses_bracketed_paste() {
+        assert_eq!(bracketed_paste("hello !"), "\x1b[200~hello !\x1b[201~");
+        assert_eq!(
+            bracketed_paste("hello \x1b[201~ world"),
+            "\x1b[200~hello  world\x1b[201~"
+        );
+    }
+
+    #[test]
+    fn gemini_prompt_avoids_shell_shortcut() {
+        assert_eq!(gemini_safe_prompt("hello !".to_owned()), " hello ！");
+        assert_eq!(gemini_safe_prompt("!status".to_owned()), " ！status");
+    }
+
+    #[test]
+    fn trim_lines_preserves_prompt_tail_when_logo_is_tall() {
+        let mut lines = vec![
+            Line::raw("logo 1"),
+            Line::raw("logo 2"),
+            Line::raw("logo 3"),
+            Line::raw("prompt > hello"),
+            Line::raw("waiting"),
+        ];
+
+        trim_lines_to_height(&mut lines, 2);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].spans[0].content, "prompt > hello");
+        assert_eq!(lines[1].spans[0].content, "waiting");
     }
 }

@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Stdout};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -31,9 +32,27 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 const SESSION: &str = "terminal-playwright-demo";
+const SDK_DAEMON_BINARY_ENV: &str = "RMUX_SDK_DAEMON_BINARY";
+const WINDOWS_PIPE: &str = r"\\.\pipe\rmux-demo-terminal-playwright";
 const TARGET_TITLE: &str = "playwright:target";
+const RUNNER_TITLE: &str = "rmux terminal playwright runner";
+const RUNNER_WINDOW_ENV: &str = "RMUX_TERMINAL_PLAYWRIGHT_RUNNER_WINDOW";
 const INPUT_VALUE: &str = "rmux";
 const EXPECTED_RESULT: &str = "Result: Hello rmux";
+const APP_BG: Color = Color::Indexed(234);
+const PANEL_BG: Color = Color::Indexed(235);
+const PANEL_ALT_BG: Color = Color::Indexed(236);
+const FIELD_BG: Color = Color::Indexed(238);
+const TEXT: Color = Color::Indexed(254);
+const MUTED: Color = Color::Indexed(245);
+const DIM: Color = Color::Indexed(240);
+const GREEN: Color = Color::Indexed(120);
+const BLUE: Color = Color::Indexed(111);
+const CYAN: Color = Color::Indexed(80);
+const YELLOW: Color = Color::Indexed(222);
+const RED: Color = Color::Indexed(203);
+const PINK: Color = Color::Indexed(211);
+const TAG_BG: Color = Color::Indexed(251);
 const STEPS: &[StepSpec] = &[
     StepSpec::new(
         r#"Find "RMUX TEST APP""#,
@@ -114,6 +133,7 @@ struct App {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    force_path_rmux_binary();
     match env::args().nth(1).as_deref() {
         Some("--target-app") => run_target_app(),
         Some("check") => check_commands(),
@@ -124,8 +144,25 @@ async fn main() -> Result<()> {
             eprintln!("usage: terminal-playwright-demo [check|smoke|cleanup]");
             Ok(())
         }
-        None => run_app().await,
+        None => run_or_open_app().await,
     }
+}
+
+fn force_path_rmux_binary() {
+    env::set_var(SDK_DAEMON_BINARY_ENV, "rmux");
+}
+
+async fn run_or_open_app() -> Result<()> {
+    if should_open_runner_window() {
+        println!("{}", open_runner_terminal()?);
+        return Ok(());
+    }
+    run_app().await
+}
+
+fn should_open_runner_window() -> bool {
+    env::var_os(RUNNER_WINDOW_ENV).is_none()
+        && (macos_terminal_available() || windows_terminal_available())
 }
 
 async fn run_app() -> Result<()> {
@@ -238,8 +275,7 @@ impl App {
 }
 
 async fn setup_demo_session(socket: &Path) -> Result<(OwnedSession, Pane, TraceSession)> {
-    let rmux = Rmux::builder()
-        .unix_socket(socket)
+    let rmux = demo_rmux_builder(socket)
         .default_timeout(Duration::from_secs(5))
         .connect_or_start()
         .await?;
@@ -266,12 +302,24 @@ async fn setup_demo_session(socket: &Path) -> Result<(OwnedSession, Pane, TraceS
 }
 
 fn open_target_terminal(socket: &Path) -> Result<String> {
+    let title = "rmux target under test";
+    if macos_terminal_available() {
+        let attach = format!(
+            "exec rmux -S {} attach-session -t {}",
+            shell_quote(&socket.to_string_lossy()),
+            shell_quote(SESSION),
+        );
+        return open_macos_target_terminal(socket, title, &attach);
+    }
+    if windows_terminal_available() {
+        return open_windows_target_terminal(socket, title);
+    }
+
     let attach = format!(
         "exec rmux -S {} attach-session -t {}",
         shell_quote(&socket.to_string_lossy()),
         shell_quote(SESSION),
     );
-    let title = "rmux target under test";
     let launchers: &[(&str, &[&str])] = &[
         (
             "mate-terminal",
@@ -319,8 +367,275 @@ fn open_target_terminal(socket: &Path) -> Result<String> {
     Ok(format!("open target manually: {attach}"))
 }
 
+fn macos_terminal_available() -> bool {
+    env::consts::OS == "macos" && command_exists("open") && command_exists("osascript")
+}
+
+fn windows_terminal_available() -> bool {
+    env::consts::OS == "windows" && command_exists("powershell.exe")
+}
+
+fn open_runner_terminal() -> Result<String> {
+    if macos_terminal_available() {
+        return open_macos_runner_terminal();
+    }
+    if windows_terminal_available() {
+        return open_windows_runner_terminal();
+    }
+    Err("no supported terminal opener found".into())
+}
+
+fn open_macos_target_terminal(socket: &Path, title: &str, attach: &str) -> Result<String> {
+    open_macos_terminal_launcher(
+        socket,
+        "target",
+        title,
+        attach,
+        "96x34+960+80",
+        "target terminal opened with Terminal.app",
+    )
+}
+
+fn open_macos_runner_terminal() -> Result<String> {
+    let socket = demo_socket_path()?;
+    let exe = env::current_exe()?;
+    let cwd = env::current_dir()?;
+    let command = format!(
+        "cd {} && exec env {}=1 {}",
+        shell_quote(&cwd.to_string_lossy()),
+        RUNNER_WINDOW_ENV,
+        shell_quote(&exe.to_string_lossy()),
+    );
+    open_macos_terminal_launcher(
+        &socket,
+        "runner",
+        RUNNER_TITLE,
+        &command,
+        "96x34+40+80",
+        "runner terminal opened with Terminal.app",
+    )
+}
+
+fn open_windows_target_terminal(socket: &Path, title: &str) -> Result<String> {
+    let command = format!(
+        "& rmux -S {} attach-session -t {}",
+        powershell_quote(&socket.to_string_lossy()),
+        powershell_quote(SESSION),
+    );
+    open_windows_terminal_launcher(
+        title,
+        &command,
+        "96x34+960+80",
+        "target terminal opened with Windows Terminal",
+    )
+}
+
+fn open_windows_runner_terminal() -> Result<String> {
+    let exe = env::current_exe()?;
+    let cwd = env::current_dir()?;
+    let command = format!(
+        "Set-Location -LiteralPath {}; $env:{} = '1'; & {}",
+        powershell_quote(&cwd.to_string_lossy()),
+        RUNNER_WINDOW_ENV,
+        powershell_quote(&exe.to_string_lossy()),
+    );
+    open_windows_terminal_launcher(
+        RUNNER_TITLE,
+        &command,
+        "96x34+40+80",
+        "runner terminal opened with Windows Terminal",
+    )
+}
+
+fn open_windows_terminal_launcher(
+    title: &str,
+    command: &str,
+    geometry: &str,
+    message: &str,
+) -> Result<String> {
+    let (cols, rows, left, top) = parse_terminal_geometry(geometry).unwrap_or((96, 34, 80, 80));
+    let launcher = write_windows_terminal_launcher(title, command)?;
+
+    if let Some(program) = windows_terminal_program() {
+        Command::new(program)
+            .args([
+                "-w",
+                "new",
+                "--pos",
+                &format!("{left},{top}"),
+                "--size",
+                &format!("{cols},{rows}"),
+                "--title",
+                title,
+                "powershell.exe",
+                "-NoExit",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &launcher.to_string_lossy(),
+            ])
+            .spawn()?;
+        return Ok(message.to_owned());
+    }
+
+    open_windows_powershell_window(title, &launcher, geometry)?;
+    Ok(format!("{message} via PowerShell"))
+}
+
+fn write_windows_terminal_launcher(title: &str, command: &str) -> Result<PathBuf> {
+    let launcher_dir = env::temp_dir().join("rmux-terminal-playwright-demo");
+    fs::create_dir_all(&launcher_dir)?;
+    let slug = title
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned();
+    let slug = if slug.is_empty() {
+        "terminal".to_owned()
+    } else {
+        slug
+    };
+    let launcher = launcher_dir.join(format!("rmux-terminal-playwright-{slug}.ps1"));
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'\r\n$Host.UI.RawUI.WindowTitle = {}\r\n{}\r\n",
+        powershell_quote(title),
+        command,
+    );
+    fs::write(&launcher, script)?;
+    Ok(launcher)
+}
+
+fn windows_terminal_program() -> Option<&'static str> {
+    if command_exists("wt.exe") {
+        Some("wt.exe")
+    } else if command_exists("wt") {
+        Some("wt")
+    } else {
+        None
+    }
+}
+
+fn open_windows_powershell_window(_title: &str, launcher: &Path, geometry: &str) -> Result<()> {
+    let (cols, rows, left, top) = parse_terminal_geometry(geometry).unwrap_or((96, 34, 80, 80));
+    let width = i32::from(cols) * 8 + 36;
+    let height = i32::from(rows) * 17 + 70;
+    let script = r#"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class RmuxDemoWindow {
+  [DllImport("user32.dll")]
+  public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+}
+"@
+$arguments = @("-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $env:RMUX_DEMO_WIN_LAUNCHER)
+$process = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -PassThru
+for ($i = 0; $i -lt 40 -and $process.MainWindowHandle -eq 0; $i++) {
+  Start-Sleep -Milliseconds 100
+  $process.Refresh()
+}
+if ($process.MainWindowHandle -ne 0) {
+  [RmuxDemoWindow]::MoveWindow($process.MainWindowHandle, [int]$env:RMUX_DEMO_WIN_LEFT, [int]$env:RMUX_DEMO_WIN_TOP, [int]$env:RMUX_DEMO_WIN_WIDTH, [int]$env:RMUX_DEMO_WIN_HEIGHT, $true) | Out-Null
+}
+"#;
+    Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .env("RMUX_DEMO_WIN_LAUNCHER", launcher)
+        .env("RMUX_DEMO_WIN_LEFT", left.to_string())
+        .env("RMUX_DEMO_WIN_TOP", top.to_string())
+        .env("RMUX_DEMO_WIN_WIDTH", width.to_string())
+        .env("RMUX_DEMO_WIN_HEIGHT", height.to_string())
+        .spawn()?;
+    Ok(())
+}
+
+fn open_macos_terminal_launcher(
+    socket: &Path,
+    slug: &str,
+    title: &str,
+    command: &str,
+    geometry: &str,
+    message: &str,
+) -> Result<String> {
+    let launcher_dir = socket
+        .parent()
+        .ok_or("demo socket path has no parent directory")?;
+    fs::create_dir_all(launcher_dir)?;
+    let launcher = launcher_dir.join(format!("rmux-terminal-playwright-{slug}.command"));
+    let script = format!(
+        "#!/usr/bin/env bash\nprintf '\\033]0;%s\\007' {}\n{}\n",
+        shell_quote(title),
+        command,
+    );
+    fs::write(&launcher, script)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700))?;
+    }
+
+    Command::new("open")
+        .args(["-n", "-a", "Terminal"])
+        .arg(&launcher)
+        .status()?;
+    thread::sleep(Duration::from_millis(800));
+    set_macos_front_window_bounds(geometry)?;
+    Ok(message.to_owned())
+}
+
+fn set_macos_front_window_bounds(geometry: &str) -> Result<()> {
+    let (left, top, right, bottom) = macos_terminal_bounds(geometry);
+    let script = format!(
+        "tell application \"Terminal\" to set bounds of front window to {{{left}, {top}, {right}, {bottom}}}"
+    );
+    let status = Command::new("osascript").arg("-e").arg(script).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("failed to position Terminal.app window".into())
+    }
+}
+
+fn macos_terminal_bounds(geometry: &str) -> (i32, i32, i32, i32) {
+    let (cols, rows, left, top) = parse_terminal_geometry(geometry).unwrap_or((96, 34, 80, 80));
+    let width = i32::from(cols) * 8 + 36;
+    let height = i32::from(rows) * 17 + 70;
+    (left, top, left + width, top + height)
+}
+
+fn parse_terminal_geometry(geometry: &str) -> Option<(u16, u16, i32, i32)> {
+    let mut parts = geometry.split('+');
+    let size = parts.next()?;
+    let left = parts.next()?.parse().ok()?;
+    let top = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let (cols, rows) = size.split_once('x')?;
+    Some((cols.parse().ok()?, rows.parse().ok()?, left, top))
+}
+
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 async fn run_flow(pane: Pane, trace: TraceSession, tx: UnboundedSender<RunnerEvent>) {
@@ -360,6 +675,10 @@ async fn run_flow_inner(
     mark_running(tx, trace, 3)?;
     demo_delay(180).await;
     pane.get_by_text("[ Run ]").click().await?;
+    if cfg!(windows) {
+        // ConPTY can drop terminal mouse reports in this demo path; Enter keeps the flow deterministic.
+        pane.keyboard().press("Enter").await?;
+    }
     trace.record_action("locator.click([ Run ])")?;
     mark_passed(tx, 3).await;
 
@@ -467,7 +786,7 @@ async fn run_tui(app: &mut App) -> Result<()> {
 
 fn draw(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
-    fill(frame, area, Color::Rgb(9, 14, 25));
+    fill(frame, area, APP_BG);
 
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -498,31 +817,29 @@ fn draw_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let bar = progress_bar(passed, app.steps.len(), 24);
     let lines = vec![
         Line::from(vec![
-            badge(" Playwright for Terminals ", Color::Rgb(166, 227, 161)),
+            badge(" Playwright for Terminals ", GREEN),
             Span::raw("  "),
             Span::styled(
                 status,
-                Style::default()
-                    .fg(Color::Rgb(166, 227, 161))
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("  {passed}/{}", app.steps.len()),
-                Style::default().fg(Color::Rgb(226, 232, 240)),
+                Style::default().fg(TEXT),
             ),
         ]),
         Line::from(vec![
-            Span::styled(bar, Style::default().fg(Color::Rgb(166, 227, 161))),
+            Span::styled(bar, Style::default().fg(GREEN)),
             Span::raw("  "),
             Span::styled(
                 "testing the app in the second terminal",
-                Style::default().fg(Color::Rgb(148, 163, 184)),
+                Style::default().fg(MUTED),
             ),
         ]),
     ];
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::default().bg(Color::Rgb(9, 14, 25)))
+            .style(Style::default().bg(APP_BG))
             .alignment(Alignment::Left),
         area,
     );
@@ -536,8 +853,8 @@ fn draw_steps(frame: &mut Frame<'_>, area: Rect, app: &App) {
             vertical: 1,
         }),
         " test runner ",
-        Color::Rgb(137, 180, 250),
-        Color::Rgb(13, 18, 32),
+        BLUE,
+        PANEL_ALT_BG,
     );
     let lines = app
         .steps
@@ -546,21 +863,17 @@ fn draw_steps(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .map(|(index, step)| {
             let is_active = step.status == StepStatus::Running;
             let (marker, status, color) = match step.status {
-                StepStatus::Pending => ("○", "queued".to_owned(), Color::Rgb(100, 116, 139)),
+                StepStatus::Pending => ("○", "queued".to_owned(), DIM),
                 StepStatus::Running => (
                     spinner(app.frame),
                     format_duration(step.started_at.map(|t| t.elapsed())),
-                    Color::Rgb(249, 226, 175),
+                    YELLOW,
                 ),
-                StepStatus::Passed => (
-                    "✅",
-                    format_duration(step.duration),
-                    Color::Rgb(166, 227, 161),
-                ),
+                StepStatus::Passed => ("✅", format_duration(step.duration), GREEN),
                 StepStatus::Failed => (
                     "❌",
                     format!("failed {}", format_duration(step.duration)),
-                    Color::Rgb(243, 139, 168),
+                    PINK,
                 ),
             };
             let label_style = if is_active {
@@ -568,13 +881,10 @@ fn draw_steps(frame: &mut Frame<'_>, area: Rect, app: &App) {
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Rgb(226, 232, 240))
+                Style::default().fg(TEXT)
             };
             Line::from(vec![
-                Span::styled(
-                    format!(" {:02} ", index + 1),
-                    Style::default().fg(Color::Rgb(71, 85, 105)),
-                ),
+                Span::styled(format!(" {:02} ", index + 1), Style::default().fg(DIM)),
                 Span::styled(format!("{marker}  "), Style::default().fg(color)),
                 Span::styled(step.spec.label, label_style),
                 Span::raw("  "),
@@ -585,72 +895,57 @@ fn draw_steps(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::default().bg(Color::Rgb(13, 18, 32)))
+            .style(Style::default().bg(PANEL_ALT_BG))
             .wrap(Wrap { trim: false }),
         inner,
     );
 }
 
 fn draw_detail(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let inner = card(
-        frame,
-        area,
-        " assertion ",
-        Color::Rgb(249, 226, 175),
-        Color::Rgb(17, 24, 39),
-    );
+    let inner = card(frame, area, " assertion ", YELLOW, PANEL_BG);
     let step = &app.steps[app.active_step_index()];
     let lines = if app.done {
         vec![
             Line::from(vec![
                 Span::styled(
                     "🚀  ",
-                    Style::default()
-                        .fg(Color::Rgb(166, 227, 161))
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     EXPECTED_RESULT,
-                    Style::default()
-                        .fg(Color::Rgb(166, 227, 161))
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(vec![
-                Span::styled("capture  ", Style::default().fg(Color::Rgb(137, 180, 250))),
+                Span::styled("capture  ", Style::default().fg(BLUE)),
                 Span::styled(
                     if app.capture.is_empty() {
                         app.detail.as_str()
                     } else {
                         app.capture.as_str()
                     },
-                    Style::default().fg(Color::Rgb(148, 163, 184)),
+                    Style::default().fg(MUTED),
                 ),
             ]),
         ]
     } else {
         vec![
             Line::from(vec![
-                Span::styled("sdk  ", Style::default().fg(Color::Rgb(249, 226, 175))),
-                Span::styled(
-                    step.spec.code,
-                    Style::default().fg(Color::Rgb(226, 232, 240)),
-                ),
+                Span::styled("sdk  ", Style::default().fg(YELLOW)),
+                Span::styled(step.spec.code, Style::default().fg(TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("expect  ", Style::default().fg(Color::Rgb(166, 227, 161))),
+                Span::styled("expect  ", Style::default().fg(GREEN)),
                 Span::styled(
                     EXPECTED_RESULT,
-                    Style::default()
-                        .fg(Color::Rgb(166, 227, 161))
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
                 ),
             ]),
         ]
     };
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::default().bg(Color::Rgb(17, 24, 39)))
+            .style(Style::default().bg(PANEL_BG))
             .wrap(Wrap { trim: false }),
         inner,
     );
@@ -663,17 +958,12 @@ fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "⏳ tests running"
     };
     let line = Line::from(vec![
-        Span::styled(
-            " q ",
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Rgb(196, 200, 210)),
-        ),
+        Span::styled(" q ", Style::default().fg(Color::Black).bg(TAG_BG)),
         Span::raw(" quit   "),
-        Span::styled(state, Style::default().fg(Color::Rgb(166, 227, 161))),
+        Span::styled(state, Style::default().fg(GREEN)),
     ]);
     frame.render_widget(
-        Paragraph::new(line).style(Style::default().bg(Color::Rgb(9, 14, 25))),
+        Paragraph::new(line).style(Style::default().bg(APP_BG)),
         area,
     );
 }
@@ -932,7 +1222,7 @@ fn target_layout(area: Rect) -> TargetLayout {
 
 fn draw_target_app(frame: &mut Frame<'_>, app: &TargetApp) {
     let area = frame.area();
-    fill(frame, area, Color::Rgb(10, 15, 27));
+    fill(frame, area, APP_BG);
 
     let layout = target_layout(area);
     draw_target_browser(frame, layout.browser);
@@ -949,35 +1239,20 @@ fn draw_target_app(frame: &mut Frame<'_>, app: &TargetApp) {
 }
 
 fn draw_target_browser(frame: &mut Frame<'_>, area: Rect) {
-    let inner = card(
-        frame,
-        area,
-        " browser ",
-        Color::Rgb(69, 183, 209),
-        Color::Rgb(17, 24, 39),
-    );
+    let inner = card(frame, area, " browser ", CYAN, PANEL_BG);
     let lines = vec![Line::from(vec![
-        Span::styled("● ● ●", Style::default().fg(Color::Rgb(248, 113, 113))),
+        Span::styled("● ● ●", Style::default().fg(RED)),
         Span::raw("  "),
-        Span::styled(
-            "https://demo.rmux.io/signup",
-            Style::default().fg(Color::Rgb(148, 163, 184)),
-        ),
+        Span::styled("https://demo.rmux.io/signup", Style::default().fg(MUTED)),
     ])];
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(Color::Rgb(17, 24, 39))),
+        Paragraph::new(lines).style(Style::default().bg(PANEL_BG)),
         inner,
     );
 }
 
 fn draw_target_hero(frame: &mut Frame<'_>, area: Rect, app: &TargetApp) {
-    let inner = card(
-        frame,
-        area,
-        " landing page ",
-        Color::Rgb(166, 227, 161),
-        Color::Rgb(15, 23, 42),
-    );
+    let inner = card(frame, area, " landing page ", GREEN, PANEL_ALT_BG);
     let headline = if app.result.is_empty() {
         "RMUX TEST APP"
     } else {
@@ -986,26 +1261,24 @@ fn draw_target_hero(frame: &mut Frame<'_>, area: Rect, app: &TargetApp) {
     let lines = vec![
         Line::from(Span::styled(
             headline,
-            Style::default()
-                .fg(Color::Rgb(226, 232, 240))
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
             "A simulated web page rendered inside a real terminal pane.",
-            Style::default().fg(Color::Rgb(148, 163, 184)),
+            Style::default().fg(MUTED),
         )),
         Line::from(vec![
-            Span::styled("tested by ", Style::default().fg(Color::Rgb(148, 163, 184))),
+            Span::styled("tested by ", Style::default().fg(MUTED)),
             Span::styled(
                 "rmux locators + keyboard + click",
-                Style::default().fg(Color::Rgb(166, 227, 161)),
+                Style::default().fg(GREEN),
             ),
         ]),
     ];
     frame.render_widget(
         Paragraph::new(lines)
             .alignment(Alignment::Center)
-            .style(Style::default().bg(Color::Rgb(15, 23, 42))),
+            .style(Style::default().bg(PANEL_ALT_BG)),
         inner,
     );
 }
@@ -1018,14 +1291,8 @@ fn draw_target_form(
     status: Rect,
     app: &TargetApp,
 ) {
-    let inner = card(
-        frame,
-        area,
-        " signup form ",
-        Color::Rgb(137, 180, 250),
-        Color::Rgb(17, 24, 39),
-    );
-    fill(frame, inner, Color::Rgb(17, 24, 39));
+    let inner = card(frame, area, " signup form ", BLUE, PANEL_BG);
+    fill(frame, inner, PANEL_BG);
 
     let status_text = if app.running {
         format!("{} running browser-like flow", spinner(app.frame))
@@ -1037,11 +1304,7 @@ fn draw_target_form(
     frame.render_widget(
         Paragraph::new(status_text)
             .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(Color::Rgb(148, 163, 184))
-                    .bg(Color::Rgb(17, 24, 39)),
-            ),
+            .style(Style::default().fg(MUTED).bg(PANEL_BG)),
         status,
     );
 
@@ -1053,23 +1316,17 @@ fn draw_target_form(
     };
     frame.render_widget(
         Paragraph::new(format!("Name   {value}"))
-            .style(
-                Style::default()
-                    .fg(Color::Rgb(226, 232, 240))
-                    .bg(Color::Rgb(30, 41, 59)),
-            )
+            .style(Style::default().fg(TEXT).bg(FIELD_BG))
             .alignment(Alignment::Center),
         input,
     );
 
     let button_style = if app.running {
-        Style::default()
-            .fg(Color::Rgb(148, 163, 184))
-            .bg(Color::Rgb(30, 41, 59))
+        Style::default().fg(MUTED).bg(FIELD_BG)
     } else {
         Style::default()
             .fg(Color::Black)
-            .bg(Color::Rgb(166, 227, 161))
+            .bg(GREEN)
             .add_modifier(Modifier::BOLD)
     };
     frame.render_widget(
@@ -1081,26 +1338,18 @@ fn draw_target_form(
 }
 
 fn draw_target_result(frame: &mut Frame<'_>, area: Rect, app: &TargetApp) {
-    let inner = card(
-        frame,
-        area,
-        " response ",
-        Color::Rgb(166, 227, 161),
-        Color::Rgb(15, 23, 42),
-    );
+    let inner = card(frame, area, " response ", GREEN, PANEL_ALT_BG);
     let text = if app.result.is_empty() {
         "Result appears here"
     } else {
         app.result.as_str()
     };
     let style = if app.result.is_empty() {
-        Style::default()
-            .fg(Color::Rgb(148, 163, 184))
-            .bg(Color::Rgb(15, 23, 42))
+        Style::default().fg(MUTED).bg(PANEL_ALT_BG)
     } else {
         Style::default()
-            .fg(Color::Rgb(166, 227, 161))
-            .bg(Color::Rgb(15, 23, 42))
+            .fg(GREEN)
+            .bg(PANEL_ALT_BG)
             .add_modifier(Modifier::BOLD)
     };
     frame.render_widget(
@@ -1124,8 +1373,8 @@ fn contains(area: Rect, col: u16, row: u16) -> bool {
 
 async fn cleanup() -> Result<()> {
     let socket = demo_socket_path()?;
-    let rmux = match Rmux::builder()
-        .unix_socket(&socket)
+    remove_macos_target_launcher(&socket);
+    let rmux = match demo_rmux_builder(&socket)
         .default_timeout(Duration::from_secs(2))
         .connect()
         .await
@@ -1144,6 +1393,17 @@ async fn cleanup() -> Result<()> {
     Ok(())
 }
 
+fn remove_macos_target_launcher(socket: &Path) {
+    remove_macos_launchers(socket);
+}
+
+fn remove_macos_launchers(socket: &Path) {
+    if let Some(parent) = socket.parent() {
+        let _ = fs::remove_file(parent.join("rmux-terminal-playwright-target.command"));
+        let _ = fs::remove_file(parent.join("rmux-terminal-playwright-runner.command"));
+    }
+}
+
 async fn smoke() -> Result<()> {
     check_commands()?;
     let socket = demo_socket_path()?;
@@ -1158,8 +1418,8 @@ async fn smoke() -> Result<()> {
 }
 
 async fn shutdown_demo_daemon(socket: &Path) -> Result<()> {
-    let rmux = match Rmux::builder()
-        .unix_socket(socket)
+    remove_macos_target_launcher(socket);
+    let rmux = match demo_rmux_builder(socket)
         .default_timeout(Duration::from_secs(2))
         .connect()
         .await
@@ -1185,6 +1445,14 @@ fn check_commands() -> Result<()> {
 }
 
 fn command_exists(command: &str) -> bool {
+    if env::consts::OS == "windows" {
+        return Command::new("where.exe")
+            .arg(command)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+    }
+
     Command::new("sh")
         .arg("-lc")
         .arg(format!("command -v {command} >/dev/null 2>&1"))
@@ -1194,6 +1462,10 @@ fn command_exists(command: &str) -> bool {
 }
 
 fn demo_socket_path() -> Result<PathBuf> {
+    if env::consts::OS == "windows" {
+        return Ok(PathBuf::from(WINDOWS_PIPE));
+    }
+
     let owner = env::var("UID")
         .or_else(|_| env::var("USER"))
         .unwrap_or_else(|_| "user".to_owned());
@@ -1207,6 +1479,15 @@ fn demo_socket_path() -> Result<PathBuf> {
     }
 
     Ok(socket_dir.join(SESSION))
+}
+
+fn demo_rmux_builder(endpoint: &Path) -> rmux_sdk::RmuxBuilder {
+    let builder = Rmux::builder();
+    if env::consts::OS == "windows" {
+        builder.windows_pipe(endpoint.to_string_lossy().into_owned())
+    } else {
+        builder.unix_socket(endpoint)
+    }
 }
 
 fn terminal_size_or_default() -> (u16, u16) {

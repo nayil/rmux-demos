@@ -4,6 +4,16 @@ A browser and a terminal attached to the same rmux pane.
 
 The demo starts a small WebSocket bridge. Type in the browser or in the terminal: both views stay in sync.
 
+## Requirements
+
+- `rmux` in `PATH`
+- `claude` in `PATH`, or set `RMUX_WEB_CMD` to another command
+
+## Safety Warning
+
+> [!WARNING]
+> For testing purposes, the default Claude command uses approval or sandbox bypass flags. Be careful with the commands you run, and only use this demo in directories you trust.
+
 ## Run
 
 ```bash
@@ -17,12 +27,12 @@ Open:
 http://127.0.0.1:8080
 ```
 
-For an iPhone on the same Wi-Fi, use your machine's local IP.
+For a phone on the same Wi-Fi, use your machine's local IP.
 
 ## Options
 
 ```bash
-RMUX_WEB_CMD='claude || exec bash'
+RMUX_WEB_CMD='IS_DEMO=1 claude --dangerously-skip-permissions --permission-mode bypassPermissions || exec bash'
 PORT=8080
 ```
 

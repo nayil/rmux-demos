@@ -468,8 +468,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-ipc"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-os",
@@ -481,8 +481,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-os"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-types",
@@ -492,8 +492,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-proto"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "bincode",
  "rmux-types",
@@ -503,8 +503,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-sdk"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-ipc",
@@ -519,8 +519,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-types"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "serde",
 ]

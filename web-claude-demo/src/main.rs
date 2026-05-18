@@ -25,7 +25,12 @@ use serde::Deserialize;
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const DEFAULT_SESSION: &str = "web-claude";
 const DEFAULT_PORT: u16 = 8080;
-const DEFAULT_CMD: &str = "claude || exec bash";
+const SDK_DAEMON_BINARY_ENV: &str = "RMUX_SDK_DAEMON_BINARY";
+const WINDOWS_PIPE: &str = r"\\.\pipe\rmux-demo-web-claude";
+const DEFAULT_UNIX_CMD: &str =
+    "IS_DEMO=1 claude --dangerously-skip-permissions --permission-mode bypassPermissions || exec bash";
+const DEFAULT_WINDOWS_CMD: &str =
+    "claude --dangerously-skip-permissions --permission-mode bypassPermissions";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -36,6 +41,7 @@ enum ClientEvent {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    force_path_rmux_binary();
     match env::args().nth(1).as_deref() {
         Some("check") => check(),
         Some("cleanup") => cleanup().await,
@@ -47,6 +53,10 @@ async fn main() -> Result<()> {
         }
         None => serve(true).await,
     }
+}
+
+fn force_path_rmux_binary() {
+    env::set_var(SDK_DAEMON_BINARY_ENV, "rmux");
 }
 
 async fn serve(attach: bool) -> Result<()> {
@@ -158,47 +168,122 @@ async fn handle_socket(socket: WebSocket, pane: Pane) {
 }
 
 async fn ensure_web_pane() -> Result<Pane> {
-    let rmux = Rmux::builder()
-        .unix_socket(demo_socket_path()?)
+    let rmux = demo_rmux_builder()?
         .default_timeout(Duration::from_secs(8))
         .connect_or_start()
         .await?;
 
     let workdir = demo_workdir()?;
-    let command = env::var("RMUX_WEB_CMD").unwrap_or_else(|_| DEFAULT_CMD.to_owned());
-    let shell = format!("cd {} && {command}", sh_quote(&workdir));
+    let command = env::var("RMUX_WEB_CMD").unwrap_or_else(|_| default_command().to_owned());
     let session_name = SessionName::new(session_name())?;
-    let session = rmux
-        .ensure_session(
-            EnsureSession::named(session_name.clone())
-                .create_or_reuse()
-                .detached(true)
-                .working_directory(workdir.to_string_lossy())
-                .size(TerminalSizeSpec::new(120, 34))
-                .shell(shell),
-        )
-        .await?;
+    let mut ensure = EnsureSession::named(session_name.clone())
+        .create_or_reuse()
+        .detached(true)
+        .working_directory(workdir.to_string_lossy())
+        .size(TerminalSizeSpec::new(120, 34));
+    if env::consts::OS == "windows" {
+        ensure = ensure.argv(windows_web_launcher_argv(&workdir, &command)?);
+    } else {
+        ensure = ensure.shell(format!("cd {} && {command}", sh_quote(&workdir)));
+    }
+    let session = rmux.ensure_session(ensure).await?;
 
     let pane = session.pane(0, 0);
     pane.set_title("Claude Web").await?;
-    Ok(rmux.get_pane_by_title("Claude Web").await?)
+    if is_claude_command(&command) {
+        accept_claude_startup_prompt(&pane).await?;
+    }
+    Ok(pane)
+}
+
+fn default_command() -> &'static str {
+    if env::consts::OS == "windows" {
+        DEFAULT_WINDOWS_CMD
+    } else {
+        DEFAULT_UNIX_CMD
+    }
+}
+
+fn is_claude_command(command: &str) -> bool {
+    command
+        .split_whitespace()
+        .find(|token| !token.contains('='))
+        == Some("claude")
+}
+
+fn windows_web_launcher_argv(workdir: &Path, command: &str) -> Result<Vec<String>> {
+    let launcher = write_windows_web_launcher(workdir, command)?;
+    Ok(vec![
+        "powershell.exe".to_owned(),
+        "-NoExit".to_owned(),
+        "-NoProfile".to_owned(),
+        "-ExecutionPolicy".to_owned(),
+        "Bypass".to_owned(),
+        "-File".to_owned(),
+        launcher.to_string_lossy().into_owned(),
+    ])
+}
+
+fn write_windows_web_launcher(workdir: &Path, command: &str) -> Result<PathBuf> {
+    let launcher_dir = env::temp_dir().join("rmux-web-claude-demo");
+    fs::create_dir_all(&launcher_dir)?;
+    let launcher = launcher_dir.join("rmux-web-claude.ps1");
+    let script = format!(
+        "$ErrorActionPreference = 'Continue'\r\n\
+         $Host.UI.RawUI.WindowTitle = 'Claude Web'\r\n\
+         Set-Location -LiteralPath {}\r\n\
+         $env:IS_DEMO = '1'\r\n\
+         {}\r\n\
+         $exitCode = if ($global:LASTEXITCODE -is [int]) {{ $global:LASTEXITCODE }} else {{ 0 }}\r\n\
+         if ($exitCode -ne 0) {{\r\n\
+           Write-Host \"\"\r\n\
+           Write-Host ('[Claude exited with code ' + $exitCode + '; the rmux pane stays open.]')\r\n\
+         }}\r\n",
+        powershell_quote(&workdir.to_string_lossy()),
+        command,
+    );
+    fs::write(&launcher, script)?;
+    Ok(launcher)
+}
+
+async fn accept_claude_startup_prompt(pane: &Pane) -> Result<()> {
+    let should_continue = pane
+        .expect_visible_text()
+        .to_match_any([
+            "Do you trust",
+            "Quick safety check",
+            "Press Enter",
+            "1. Yes",
+        ])
+        .timeout(Duration::from_secs(2))
+        .await
+        .is_ok();
+    if should_continue {
+        pane.keyboard().press("Enter").await?;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    Ok(())
 }
 
 fn check() -> Result<()> {
     ensure_rmux_binary()?;
 
-    if !command_exists("bash") {
+    if env::consts::OS == "windows" {
+        if !command_exists("powershell.exe") {
+            bail!("missing command in PATH: powershell.exe");
+        }
+    } else if !command_exists("bash") {
         bail!("missing command in PATH: bash");
     }
 
     println!("rmux binary: rmux");
-    println!("rmux socket: {}", demo_socket_path()?.display());
+    println!("rmux endpoint: {}", demo_endpoint_arg()?);
     println!(
         "{}",
         if command_exists("claude") {
             "claude is available"
         } else {
-            "claude not found; default command falls back to bash"
+            "claude not found; set RMUX_WEB_CMD to choose another command"
         }
     );
     Ok(())
@@ -206,8 +291,7 @@ fn check() -> Result<()> {
 
 async fn cleanup() -> Result<()> {
     ensure_rmux_binary()?;
-    let rmux = Rmux::builder()
-        .unix_socket(demo_socket_path()?)
+    let rmux = demo_rmux_builder()?
         .default_timeout(Duration::from_secs(2))
         .build();
 
@@ -229,7 +313,7 @@ fn ensure_rmux_binary() -> Result<()> {
 fn attach_command() -> Result<String> {
     Ok(format!(
         "rmux -S {} attach-session -t {}",
-        sh_quote(&demo_socket_path()?),
+        sh_quote_str(&demo_endpoint_arg()?),
         session_name()
     ))
 }
@@ -237,7 +321,7 @@ fn attach_command() -> Result<String> {
 fn run_attach() -> Result<()> {
     let status = Command::new("rmux")
         .arg("-S")
-        .arg(demo_socket_path()?)
+        .arg(demo_endpoint_arg()?)
         .arg("attach-session")
         .arg("-t")
         .arg(session_name())
@@ -280,6 +364,16 @@ fn session_name() -> String {
 }
 
 fn command_exists(command: &str) -> bool {
+    if env::consts::OS == "windows" {
+        return Command::new("where.exe")
+            .arg(command)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+    }
+
     Command::new("sh")
         .arg("-lc")
         .arg(format!("command -v {}", sh_quote(Path::new(command))))
@@ -292,5 +386,30 @@ fn command_exists(command: &str) -> bool {
 
 fn sh_quote(value: &Path) -> String {
     let value = value.to_string_lossy();
+    sh_quote_str(&value)
+}
+
+fn sh_quote_str(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn demo_rmux_builder() -> Result<rmux_sdk::RmuxBuilder> {
+    let builder = Rmux::builder();
+    if env::consts::OS == "windows" {
+        Ok(builder.windows_pipe(WINDOWS_PIPE))
+    } else {
+        Ok(builder.unix_socket(demo_socket_path()?))
+    }
+}
+
+fn demo_endpoint_arg() -> Result<String> {
+    if env::consts::OS == "windows" {
+        Ok(WINDOWS_PIPE.to_owned())
+    } else {
+        Ok(demo_socket_path()?.to_string_lossy().into_owned())
+    }
 }

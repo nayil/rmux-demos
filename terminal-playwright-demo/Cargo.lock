@@ -142,7 +142,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -362,8 +362,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-ipc"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-os",
@@ -375,8 +375,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-os"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-types",
@@ -386,8 +386,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-proto"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "bincode",
  "rmux-types",
@@ -397,8 +397,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-sdk"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "libc",
  "rmux-ipc",
@@ -413,8 +413,8 @@ dependencies = [
 
 [[package]]
 name = "rmux-types"
-version = "0.1.2"
-source = "git+https://github.com/Helvesec/rmux#bb0ca93cc4fdc7f610c9cea948f3fe160516685e"
+version = "0.2.0"
+source = "git+https://github.com/Helvesec/rmux#352efc78e414a669640aa2302ee5c7145b18d4ce"
 dependencies = [
  "serde",
 ]
@@ -442,7 +442,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

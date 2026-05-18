@@ -1,8 +1,12 @@
 # mini-zellij
 
-A small Zellij-style terminal workspace built on rmux.
+A tiny Zellij-style terminal workspace built on rmux.
 
 The UI is Ratatui. The panes are real rmux panes rendered through `ratatui-rmux`.
+
+## Requirements
+
+`rmux` must be available in `PATH`.
 
 ## Run
 
