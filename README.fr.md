@@ -1,4 +1,4 @@
-# demos rmux
+# demos RMUX
 
 Cinq petites demos qui montrent rmux comme backend de terminaux programmable.
 
