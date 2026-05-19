@@ -16,6 +16,7 @@
 <!-- rmux-demo-gallery:start -->
 <!-- rmux-demo-gallery-item:start -->
 <p>
+  <strong><a href="https://github.com/helvesec/rmux">RMUX</a> - demo-orchestration</strong><br>
   <a href="https://github.com/Helvesec/rmux-demos/tree/main/demo-orchestration">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/readme/demo-orchestration-header-dark.svg">
@@ -31,6 +32,7 @@
 
 <!-- rmux-demo-gallery-item:start -->
 <p>
+  <strong><a href="https://github.com/helvesec/rmux">RMUX</a> - broadcast-demo</strong><br>
   <a href="https://github.com/Helvesec/rmux-demos/tree/main/broadcast-demo">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/readme/demo-broadcast-header-dark.svg">
@@ -46,6 +48,7 @@
 
 <!-- rmux-demo-gallery-item:start -->
 <p>
+  <strong><a href="https://github.com/helvesec/rmux">RMUX</a> - mini-zellij</strong><br>
   <a href="https://github.com/Helvesec/rmux-demos/tree/main/mini-zellij">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/readme/demo-zellij-header-dark.svg">
@@ -61,6 +64,7 @@
 
 <!-- rmux-demo-gallery-item:start -->
 <p>
+  <strong><a href="https://github.com/helvesec/rmux">RMUX</a> - web-claude-demo</strong><br>
   <a href="https://github.com/Helvesec/rmux-demos/tree/main/web-claude-demo">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/readme/demo-mirroring-header-dark.svg">
@@ -76,6 +80,7 @@
 
 <!-- rmux-demo-gallery-item:start -->
 <p>
+  <strong><a href="https://github.com/helvesec/rmux">RMUX</a> - terminal-playwright-demo</strong><br>
   <a href="https://github.com/Helvesec/rmux-demos/tree/main/terminal-playwright-demo">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/readme/demo-playwright-header-dark.svg">
