@@ -2,10 +2,12 @@
 
 <!-- rmux-demo-media:start -->
 <p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-orchestration-header-dark.svg">
-    <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
-  </picture><br>
+  <a href="https://github.com/Helvesec/rmux-demos/tree/main/demo-orchestration">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-orchestration-header-dark.svg">
+      <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
+    </picture>
+  </a><br>
   <a href="https://rmux.io/#demo-orchestration">
     <img src="../assets/readme/demo-orchestration-preview.png" alt="Lire la video Orchestration Demo" width="720">
   </a>

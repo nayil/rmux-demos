@@ -2,10 +2,12 @@
 
 <!-- rmux-demo-media:start -->
 <p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-playwright-header-dark.svg">
-    <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
-  </picture><br>
+  <a href="https://github.com/Helvesec/rmux-demos/tree/main/terminal-playwright-demo">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-playwright-header-dark.svg">
+      <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
+    </picture>
+  </a><br>
   <a href="https://rmux.io/#demo-playwright">
     <img src="../assets/readme/demo-playwright-preview.png" alt="播放 Playwright Demo 视频" width="720">
   </a>

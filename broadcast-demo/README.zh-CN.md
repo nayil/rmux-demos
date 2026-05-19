@@ -2,10 +2,12 @@
 
 <!-- rmux-demo-media:start -->
 <p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
-    <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
-  </picture><br>
+  <a href="https://github.com/Helvesec/rmux-demos/tree/main/broadcast-demo">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
+      <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
+    </picture>
+  </a><br>
   <a href="https://rmux.io/#demo-broadcast">
     <img src="../assets/readme/demo-broadcast-preview.png" alt="播放 Broadcast Demo 视频" width="720">
   </a>

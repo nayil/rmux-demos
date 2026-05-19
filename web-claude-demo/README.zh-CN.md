@@ -2,10 +2,12 @@
 
 <!-- rmux-demo-media:start -->
 <p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-mirroring-header-dark.svg">
-    <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
-  </picture><br>
+  <a href="https://github.com/Helvesec/rmux-demos/tree/main/web-claude-demo">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-mirroring-header-dark.svg">
+      <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
+    </picture>
+  </a><br>
   <a href="https://rmux.io/#demo-mirroring">
     <img src="../assets/readme/demo-mirroring-preview.png" alt="播放 Mirroring Demo 视频" width="720">
   </a>

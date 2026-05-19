@@ -2,10 +2,12 @@
 
 <!-- rmux-demo-media:start -->
 <p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
-    <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
-  </picture><br>
+  <a href="https://github.com/Helvesec/rmux-demos/tree/main/mini-zellij">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
+      <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
+    </picture>
+  </a><br>
   <a href="https://rmux.io/#demo-zellij">
     <img src="../assets/readme/demo-zellij-preview.png" alt="Lire la video Zellij Demo" width="720">
   </a>
