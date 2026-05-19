@@ -1,5 +1,17 @@
 # mini-zellij
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
+    <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-zellij.mp4">
+    <img src="../assets/readme/demo-zellij-preview.png" alt="播放 Zellij Demo 视频" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 一个构建在 rmux 上的小型 Zellij 风格终端工作区。
 
 UI 使用 Ratatui。pane 是通过 `ratatui-rmux` 渲染的真实 rmux pane。

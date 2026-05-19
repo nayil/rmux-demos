@@ -1,5 +1,17 @@
 # broadcast-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
+    <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-broadcast.mp4">
+    <img src="../assets/readme/demo-broadcast-preview.png" alt="播放 Broadcast Demo 视频" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 一个面向 AI CLI 的 Ratatui 竞技场。
 
 应用会创建五个隐藏的 rmux pane，并在底部显示一个干净的 prompt。按下 `Enter` 后，所有选中的 agent 都会收到同一个 prompt。

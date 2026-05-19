@@ -1,5 +1,17 @@
 # demo-orchestration
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-orchestration-header-dark.svg">
+    <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-orchestration.mp4">
+    <img src="../assets/readme/demo-orchestration-preview.png" alt="Play Orchestration Demo video" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Claude controls other AI agents through rmux.
 
 The launcher opens four terminal windows: Codex, Gemini, Grok, and Claude. Claude gets the rmux context it needs to send input to the other agents and read their panes.

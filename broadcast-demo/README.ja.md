@@ -1,5 +1,17 @@
 # broadcast-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
+    <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-broadcast.mp4">
+    <img src="../assets/readme/demo-broadcast-preview.png" alt="Broadcast Demo の動画を見る" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 AI CLI のための Ratatui アリーナです。
 
 このアプリは 5 つの隠れた rmux pane を作り、下部に 1 つの prompt を表示します。`Enter` を押すと、選択された agent が同じ prompt で走り始めます。

@@ -1,5 +1,17 @@
 # broadcast-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
+    <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-broadcast.mp4">
+    <img src="../assets/readme/demo-broadcast-preview.png" alt="Play Broadcast Demo video" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 A Ratatui arena for AI CLIs.
 
 The app creates five hidden rmux panes, then shows one clean prompt at the bottom. Press `Enter` and every selected agent races through the same prompt.

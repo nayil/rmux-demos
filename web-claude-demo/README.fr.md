@@ -1,5 +1,17 @@
 # web-claude-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-mirroring-header-dark.svg">
+    <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-mirroring.mp4">
+    <img src="../assets/readme/demo-mirroring-preview.png" alt="Lire la video Mirroring Demo" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Un navigateur et un terminal attaches au meme pane rmux.
 
 La demo lance un petit bridge WebSocket. Tape dans le navigateur ou dans le terminal: les deux vues restent synchronisees.

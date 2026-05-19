@@ -1,5 +1,17 @@
 # broadcast-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
+    <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-broadcast.mp4">
+    <img src="../assets/readme/demo-broadcast-preview.png" alt="Lire la video Broadcast Demo" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Une arene Ratatui pour CLI IA.
 
 L'app cree cinq panes rmux caches, puis affiche un prompt propre en bas. Appuie sur `Enter` et chaque agent selectionne recoit le meme prompt.

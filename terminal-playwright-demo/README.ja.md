@@ -1,5 +1,17 @@
 # terminal-playwright-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-playwright-header-dark.svg">
+    <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-playwright.mp4">
+    <img src="../assets/readme/demo-playwright-preview.png" alt="Playwright Demo の動画を見る" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 本物のターミナルアプリ向けの Playwright 風テストです。
 
 デモは 2 つのターミナルを開きます。1 つはライブで動くテストランナー、もう 1 つは本物の rmux pane に描画された simulated web page です。

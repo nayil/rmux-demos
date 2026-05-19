@@ -1,5 +1,17 @@
 # web-claude-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-mirroring-header-dark.svg">
+    <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-mirroring.mp4">
+    <img src="../assets/readme/demo-mirroring-preview.png" alt="播放 Mirroring Demo 视频" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 浏览器和终端连接到同一个 rmux pane。
 
 demo 会启动一个小型 WebSocket bridge。在浏览器或终端中输入，两边都会保持同步。

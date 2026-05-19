@@ -1,5 +1,17 @@
 # mini-zellij
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
+    <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-zellij.mp4">
+    <img src="../assets/readme/demo-zellij-preview.png" alt="Zellij Demo の動画を見る" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 rmux 上に作った小さな Zellij 風ターミナルワークスペースです。
 
 UI は Ratatui です。pane は `ratatui-rmux` で描画される本物の rmux pane です。

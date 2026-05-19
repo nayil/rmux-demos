@@ -1,5 +1,17 @@
 # mini-zellij
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
+    <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-zellij.mp4">
+    <img src="../assets/readme/demo-zellij-preview.png" alt="Lire la video Zellij Demo" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Un mini workspace terminal type Zellij construit sur rmux.
 
 L'UI est en Ratatui. Les panes sont de vrais panes rmux rendus via `ratatui-rmux`.

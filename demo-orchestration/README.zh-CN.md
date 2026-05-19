@@ -1,5 +1,17 @@
 # demo-orchestration
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-orchestration-header-dark.svg">
+    <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-orchestration.mp4">
+    <img src="../assets/readme/demo-orchestration-preview.png" alt="播放 Orchestration Demo 视频" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Claude 通过 rmux 控制其他 AI agent。
 
 启动器会打开四个终端窗口：Codex、Gemini、Grok 和 Claude。Claude 会拿到 rmux 上下文，用来向其他 agent 发送输入并读取它们的 pane。

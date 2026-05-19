@@ -1,5 +1,17 @@
 # demo-orchestration
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-orchestration-header-dark.svg">
+    <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-orchestration.mp4">
+    <img src="../assets/readme/demo-orchestration-preview.png" alt="Lire la video Orchestration Demo" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 Claude controle d'autres agents IA via rmux.
 
 Le launcher ouvre quatre fenetres terminal: Codex, Gemini, Grok et Claude. Claude recoit le contexte rmux necessaire pour envoyer du texte aux autres agents et lire leurs panes.

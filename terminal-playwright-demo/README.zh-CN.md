@@ -1,5 +1,17 @@
 # terminal-playwright-demo
 
+<!-- rmux-demo-media:start -->
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-playwright-header-dark.svg">
+    <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
+  </picture><br>
+  <a href="https://rmux.io/demos/demo-playwright.mp4">
+    <img src="../assets/readme/demo-playwright-preview.png" alt="播放 Playwright Demo 视频" width="720">
+  </a>
+</p>
+<!-- rmux-demo-media:end -->
+
 面向真实终端应用的 Playwright 风格测试。
 
 demo 会打开两个终端：一个显示实时动画测试 runner，另一个显示在真实 rmux pane 中渲染的 simulated web page。
