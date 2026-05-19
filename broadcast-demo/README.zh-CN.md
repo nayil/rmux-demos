@@ -8,6 +8,7 @@
       <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 2,171 lines</em></sub><br>
   <a href="https://rmux.io/#demo-broadcast">
     <img src="../assets/readme/demo-broadcast-preview.png" alt="播放 Broadcast Demo 视频" width="720">
   </a>

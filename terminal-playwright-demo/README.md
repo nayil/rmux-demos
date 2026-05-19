@@ -8,6 +8,7 @@
       <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 1,495 lines</em></sub><br>
   <a href="https://rmux.io/#demo-playwright">
     <img src="../assets/readme/demo-playwright-preview.png" alt="Play Playwright Demo video" width="720">
   </a>

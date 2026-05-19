@@ -22,6 +22,7 @@ Voici quelques demos courtes de ce que vous pouvez construire avec RMUX. RMUX ou
       <img src="assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 514 lines</em></sub><br>
   <a href="https://rmux.io/#demo-orchestration">
     <img src="assets/readme/demo-orchestration-preview.png" alt="Lire la video Orchestration Demo" width="720">
   </a>
@@ -36,6 +37,7 @@ Voici quelques demos courtes de ce que vous pouvez construire avec RMUX. RMUX ou
       <img src="assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 2,171 lines</em></sub><br>
   <a href="https://rmux.io/#demo-broadcast">
     <img src="assets/readme/demo-broadcast-preview.png" alt="Lire la video Broadcast Demo" width="720">
   </a>
@@ -50,6 +52,7 @@ Voici quelques demos courtes de ce que vous pouvez construire avec RMUX. RMUX ou
       <img src="assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 944 lines</em></sub><br>
   <a href="https://rmux.io/#demo-zellij">
     <img src="assets/readme/demo-zellij-preview.png" alt="Lire la video Zellij Demo" width="720">
   </a>
@@ -64,6 +67,7 @@ Voici quelques demos courtes de ce que vous pouvez construire avec RMUX. RMUX ou
       <img src="assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 649 lines</em></sub><br>
   <a href="https://rmux.io/#demo-mirroring">
     <img src="assets/readme/demo-mirroring-preview.png" alt="Lire la video Mirroring Demo" width="720">
   </a>
@@ -78,6 +82,7 @@ Voici quelques demos courtes de ce que vous pouvez construire avec RMUX. RMUX ou
       <img src="assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 1,495 lines</em></sub><br>
   <a href="https://rmux.io/#demo-playwright">
     <img src="assets/readme/demo-playwright-preview.png" alt="Lire la video Playwright Demo" width="720">
   </a>

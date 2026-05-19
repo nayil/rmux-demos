@@ -8,6 +8,7 @@
       <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 944 lines</em></sub><br>
   <a href="https://rmux.io/#demo-zellij">
     <img src="../assets/readme/demo-zellij-preview.png" alt="播放 Zellij Demo 视频" width="720">
   </a>

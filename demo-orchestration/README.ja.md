@@ -8,6 +8,7 @@
       <img src="../assets/readme/demo-orchestration-header.svg" alt="Orchestration Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 514 lines</em></sub><br>
   <a href="https://rmux.io/#demo-orchestration">
     <img src="../assets/readme/demo-orchestration-preview.png" alt="Orchestration Demo の動画を見る" width="720">
   </a>

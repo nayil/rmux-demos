@@ -8,6 +8,7 @@
       <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
     </picture>
   </a><br>
+  <sub><em>≃ 649 lines</em></sub><br>
   <a href="https://rmux.io/#demo-mirroring">
     <img src="../assets/readme/demo-mirroring-preview.png" alt="Lire la video Mirroring Demo" width="720">
   </a>
