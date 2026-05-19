@@ -6,7 +6,7 @@
     <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-broadcast-header-dark.svg">
     <img src="../assets/readme/demo-broadcast-header.svg" alt="Broadcast Demo" width="650">
   </picture><br>
-  <a href="https://rmux.io/demos/demo-broadcast.mp4">
+  <a href="https://rmux.io/#demo-broadcast">
     <img src="../assets/readme/demo-broadcast-preview.png" alt="Play Broadcast Demo video" width="720">
   </a>
 </p>

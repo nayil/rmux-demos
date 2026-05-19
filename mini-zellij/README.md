@@ -6,7 +6,7 @@
     <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-zellij-header-dark.svg">
     <img src="../assets/readme/demo-zellij-header.svg" alt="Zellij Demo" width="650">
   </picture><br>
-  <a href="https://rmux.io/demos/demo-zellij.mp4">
+  <a href="https://rmux.io/#demo-zellij">
     <img src="../assets/readme/demo-zellij-preview.png" alt="Play Zellij Demo video" width="720">
   </a>
 </p>

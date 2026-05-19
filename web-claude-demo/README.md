@@ -6,7 +6,7 @@
     <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-mirroring-header-dark.svg">
     <img src="../assets/readme/demo-mirroring-header.svg" alt="Mirroring Demo" width="650">
   </picture><br>
-  <a href="https://rmux.io/demos/demo-mirroring.mp4">
+  <a href="https://rmux.io/#demo-mirroring">
     <img src="../assets/readme/demo-mirroring-preview.png" alt="Play Mirroring Demo video" width="720">
   </a>
 </p>

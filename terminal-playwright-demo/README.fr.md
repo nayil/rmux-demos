@@ -6,7 +6,7 @@
     <source media="(prefers-color-scheme: dark)" srcset="../assets/readme/demo-playwright-header-dark.svg">
     <img src="../assets/readme/demo-playwright-header.svg" alt="Playwright Demo" width="650">
   </picture><br>
-  <a href="https://rmux.io/demos/demo-playwright.mp4">
+  <a href="https://rmux.io/#demo-playwright">
     <img src="../assets/readme/demo-playwright-preview.png" alt="Lire la video Playwright Demo" width="720">
   </a>
 </p>
