@@ -289,13 +289,47 @@ Collaboration rules:
 EOF
 }
 
+leader_operating_contract() {
+  cat <<'EOF'
+Leadership operating contract
+
+Source of truth:
+- Use RMUX_MEMBER_TARGETS as the source of truth for role-to-pane routing.
+- Do not assume pane order equals role. Resolve a role target from RMUX_MEMBER_TARGETS before sending work.
+- Use RMUX_MEMBER_ROLES to understand each member's title and expected specialty.
+
+Delegation protocol:
+- Build an ownership map before implementation: role -> owned scope -> expected output.
+- Send role-scoped requests to the relevant member panes before taking over member-owned work.
+- Ask for small, concrete outputs: risks, plan, patch notes, tests, review findings, or acceptance criteria.
+- When waiting for members, check RMUX_ALERT_LOG or run ./launch.sh alerts "$RMUX_WORKGROUP_SESSION" before assuming they are still working.
+
+Anti-single-player rules:
+- Do not implement the whole task alone when member panes are available.
+- If you bypass a member-owned role, state why before doing that work yourself.
+- Do not merge multiple specialties into one vague "member" assignment when named roles exist.
+- Keep leader work focused on orchestration, integration, conflict resolution, and final accountability.
+
+Completion checklist:
+- Report role contributions before final answer.
+- State which roles responded, which did not, and which decisions were made by the leader.
+- Summarize implementation, verification, unresolved risks, and any member-owned work that was skipped.
+EOF
+}
+
 leader_workflow_prompt() {
   case "$1" in
     simple)
       cat <<'EOF'
 Mode-specific leader workflow: simple
 
+Simple ownership map:
+- developer -> implementation plan, code changes, local self-checks
+- reviewer -> critique, edge cases, regression tests, final review
+- leader -> scope, delegation, integration, verification summary
+
 Workflow graph:
+leader -> developer: scoped implementation request
 leader -> developer: implement
 developer -> leader: patch/result
 leader -> reviewer: review/test
@@ -307,11 +341,24 @@ Rules:
 - Leader coordinates, inspects, and integrates.
 - Developer owns implementation; reviewer owns validation.
 - Leader must not do the whole task alone unless the work is a tiny control-plane fix.
+- Tiny-fix exception requires a one-sentence reason and final reviewer-style self-check.
 EOF
       ;;
     classic)
       cat <<'EOF'
 Mode-specific leader workflow: classic
+
+Classic ownership map:
+- frontend -> UI/client state and browser behavior
+- backend -> APIs/data/runtime behavior
+- architect -> boundaries/risks/sequencing
+- leader -> ownership map, delegation, integration, final decision
+
+Required delegation order:
+1. Ask architect for boundaries, coupling risks, and sequencing when the task is cross-cutting.
+2. Ask frontend for UI/client impact when user-facing behavior, state, layout, or browser logic is involved.
+3. Ask backend for API/data/runtime impact when server behavior, persistence, scripts, or integrations are involved.
+4. After implementation, ask architect for coherence review if both frontend and backend scopes changed.
 
 Workflow graph:
 leader -> architect: boundaries/risks
@@ -326,11 +373,25 @@ Rules:
 - Leader must delegate frontend/backend/architecture work before implementing cross-cutting changes.
 - Frontend owns client-facing behavior; backend owns API/data/runtime behavior; architect owns boundaries and risk.
 - Leader integrates role outputs and may only do direct edits after ownership is clear.
+- If a role is irrelevant, leader must state the exclusion reason in the ownership map.
 EOF
       ;;
     product)
       cat <<'EOF'
 Mode-specific leader workflow: product
+
+Product ownership map:
+- product -> user goal, scope boundary, acceptance criteria, priority
+- designer -> UX flow, information architecture, copy, visual hierarchy
+- developer -> implementation plan, code changes, technical risks
+- qa -> test matrix, boundary cases, regression confidence
+- leader -> tradeoff resolution, integration, final readiness decision
+
+Required delegation order:
+1. Ask product to clarify scope and acceptance criteria before implementation.
+2. Ask designer for flow and usability impact before changing user-facing behavior.
+3. Ask developer for implementation plan and risk.
+4. Ask qa for test matrix before final answer.
 
 Workflow graph:
 leader -> product: scope/acceptance criteria
@@ -346,11 +407,27 @@ Rules:
 - Product defines what, designer defines experience, developer builds, qa validates.
 - Leader must not collapse product, design, implementation, and QA ownership into one role.
 - Leader integrates decisions and reports which roles participated.
+- If the task is purely technical, leader may skip product/designer only after stating why.
 EOF
       ;;
     advanced)
       cat <<'EOF'
 Mode-specific leader workflow: advanced
+
+Advanced ownership map:
+- architect -> architecture, sequencing, integration boundaries, long-term risk
+- interaction -> flows/accessibility/user feedback
+- frontend -> UI/state implementation and browser behavior
+- backend -> APIs/data/runtime implementation
+- qa -> test strategy/regression gates
+- leader -> role routing, conflict resolution, final accountability
+
+Required delegation order:
+1. Ask architect for architecture and sequencing before major implementation.
+2. Ask interaction for flow, accessibility, and feedback impact when user behavior changes.
+3. Ask frontend and backend for their owned implementation plans where relevant.
+4. Ask qa for test strategy before declaring completion.
+5. Return to architect and qa for final gates when multiple modules changed.
 
 Workflow graph:
 leader -> architect: architecture and sequencing
@@ -366,11 +443,22 @@ Rules:
 - Leader must gather role-specific input before major implementation and before declaring completion.
 - Interaction owns flows/accessibility; frontend owns UI/state; backend owns API/data/runtime; architect and qa own final gates.
 - Leader integrates, resolves conflicts, and records residual risk.
+- Completion checklist must include: ownership map, role responses, verification, final gates, and residual risks.
+- Report role contributions before final answer.
 EOF
       ;;
     *)
       cat <<'EOF'
 Mode-specific leader workflow: custom
+
+Custom ownership map:
+- each member -> explicitly assigned scoped responsibility
+- leader -> assign ownership, avoid duplicate/conflicting work, integrate results
+
+Required delegation order:
+1. Name each available member and assign a scoped responsibility before implementation.
+2. Ask at least one member for implementation or analysis and at least one member for review/verification when there are two or more members.
+3. Reassign or take over only after stating why the original owner is skipped.
 
 Workflow graph:
 leader -> each member: assign scoped responsibility
@@ -383,6 +471,7 @@ Rules:
 - Leader must name ownership explicitly before asking for work.
 - Leader must avoid doing all implementation directly when member panes are available.
 - Final summary should state which members contributed and what they owned.
+- Do not refer to generic members by number only; attach each member number to a concrete responsibility.
 EOF
       ;;
   esac
@@ -582,7 +671,7 @@ configure_pane_titles() {
 leader_command() {
   local member_targets="$1"
   local member_roles="$2"
-  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q alert_dir_q alert_log_q leader_prompt leader_prompt_q leader_workflow leader_cmd
+  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q alert_dir_q alert_log_q leader_prompt leader_prompt_q leader_contract leader_workflow leader_cmd
 
   socket_q="$(q "$SOCKET")"
   session_q="$(q "$SESSION")"
@@ -595,9 +684,10 @@ leader_command() {
   workdir_q="$(q "$WORKDIR")"
   alert_dir_q="$(q "$ALERT_DIR")"
   alert_log_q="$(q "$ALERT_LOG")"
+  leader_contract="$(leader_operating_contract)"
   leader_workflow="$(leader_workflow_prompt "$WORKGROUP_MODE")"
-  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s\n\n%s\n\nPassive member alerts:\n- Member approval/confirmation alerts are written to \$RMUX_ALERT_LOG.\n- When waiting for members, run ./launch.sh alerts \"\$RMUX_WORKGROUP_SESSION\" or inspect \$RMUX_ALERT_LOG before assuming they are still working.\n- Alert logs are scoped per rmux session under \$RMUX_ALERT_DIR." \
-    "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")" "$leader_workflow"
+  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s\n\n%s\n\n%s\n\nPassive member alerts:\n- Member approval/confirmation alerts are written to \$RMUX_ALERT_LOG.\n- When waiting for members, run ./launch.sh alerts \"\$RMUX_WORKGROUP_SESSION\" or inspect \$RMUX_ALERT_LOG before assuming they are still working.\n- Alert logs are scoped per rmux session under \$RMUX_ALERT_DIR." \
+    "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")" "$leader_contract" "$leader_workflow"
   leader_prompt_q="$(q "$leader_prompt")"
 
   if [[ -n "${CODEX_CMD:-}" ]]; then
@@ -635,9 +725,17 @@ set_member_title() {
 
 alert_line_from_capture() {
   local line
-  local alert_regex='(Do you want to proceed|Would you like to|Allow|approve|approval|permission|Press Enter|\[[yY]/[nN]\]|\[[yY]/N\]|\([yY]/[nN]\)|是否继续|授权|确认|允许|继续吗)'
+  local lines=()
+  local alert_regex='(Do you want to proceed\?|Would you like to .*\?|Allow .*\?|Approve .*\?|approval required|permission required|Permission required|Press Enter to continue|\[[yY]/[nN]\]|\[[yY]/N\]|\([yY]/[nN]\)|是否继续[？?]|是否允许[？?]|是否授权[？?]|继续吗[？?]?)'
 
   while IFS= read -r line; do
+    lines+=("$line")
+    if (( ${#lines[@]} > 25 )); then
+      lines=("${lines[@]:1}")
+    fi
+  done
+
+  for line in "${lines[@]}"; do
     if [[ "$line" =~ $alert_regex ]]; then
       printf "%s" "$line"
       return 0

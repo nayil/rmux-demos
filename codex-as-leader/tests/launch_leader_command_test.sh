@@ -129,6 +129,19 @@ case "$leader_cmd" in
     ;;
 esac
 
+for expected in \
+  "Leadership operating contract" \
+  "Build an ownership map before implementation" \
+  "Use RMUX_MEMBER_TARGETS as the source of truth" \
+  "Do not assume pane order equals role" \
+  "If you bypass a member-owned role, state why"; do
+  if [[ "$leader_cmd" != *"$expected"* ]]; then
+    echo "default launch did not inject leader operating contract guardrail: $expected" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+  fi
+done
+
 case "$leader_cmd" in
   *"export RMUX_ALERT_DIR=$TMP/alerts/codex-as-leader-test;"*"export RMUX_ALERT_LOG=$TMP/alerts/codex-as-leader-test/alerts.log;"*) ;;
   *)
@@ -312,6 +325,19 @@ case "$leader_cmd" in
     ;;
 esac
 
+for expected in \
+  "Classic ownership map" \
+  "frontend -> UI/client state and browser behavior" \
+  "backend -> APIs/data/runtime behavior" \
+  "architect -> boundaries/risks/sequencing" \
+  "Required delegation order"; do
+  if [[ "$leader_cmd" != *"$expected"* ]]; then
+    echo "classic launch did not inject explicit role ownership text: $expected" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+  fi
+done
+
 classic_border_format="$(grep 'pane-border-format' "$LOG" | tail -n 1)"
 
 case "$classic_border_format" in
@@ -364,6 +390,19 @@ case "$leader_cmd" in
     exit 1
     ;;
 esac
+
+for expected in \
+  "Advanced ownership map" \
+  "interaction -> flows/accessibility/user feedback" \
+  "qa -> test strategy/regression gates" \
+  "Completion checklist" \
+  "Report role contributions before final answer"; do
+  if [[ "$leader_cmd" != *"$expected"* ]]; then
+    echo "advanced launch did not inject explicit advanced ownership text: $expected" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+  fi
+done
 
 if ! grep -Fq 'select-pane -t %1 -T frontend: claude' "$LOG"; then
   echo "advanced mode did not title frontend" >&2
@@ -447,6 +486,43 @@ rm -f "$RMUX_TEST_SPLIT_COUNT"
 rm -f "$TMP/has-session-count"
 export RMUX_TEST_HAS_SESSION_ONCE_AFTER_FIRST=1
 export RMUX_TEST_HAS_SESSION_COUNT_FILE="$TMP/has-session-count"
+export RMUX_TEST_CAPTURE_PANE_OUTPUT="需要用户确认的问题：刷新频率和保留周期"
+
+(
+  export RMUX_WORKGROUP_SESSION="codex-as-leader-nonalert"
+  export RMUX_ALERT_INTERVAL=0
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if [[ -f "$TMP/has-session-count" ]] && (( $(<"$TMP/has-session-count") >= 3 )); then
+    break
+  fi
+  sleep 0.1
+done
+
+unset RMUX_TEST_HAS_SESSION_ONCE_AFTER_FIRST
+unset RMUX_TEST_HAS_SESSION_COUNT_FILE
+unset RMUX_TEST_CAPTURE_PANE_OUTPUT
+
+if [[ -s "$TMP/alerts/codex-as-leader-nonalert/alerts.log" ]]; then
+  echo "alert watcher should not treat ordinary confirmation discussion as an interactive prompt" >&2
+  cat "$TMP/alerts/codex-as-leader-nonalert/alerts.log" >&2
+  exit 1
+fi
+
+if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
+  echo "alert watcher should not mark a member waiting for ordinary confirmation discussion" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+rm -f "$TMP/has-session-count"
+export RMUX_TEST_HAS_SESSION_ONCE_AFTER_FIRST=1
+export RMUX_TEST_HAS_SESSION_COUNT_FILE="$TMP/has-session-count"
 export RMUX_TEST_CAPTURE_PANE_OUTPUT="Do you want to proceed? [y/N]"
 
 (
@@ -457,7 +533,7 @@ export RMUX_TEST_CAPTURE_PANE_OUTPUT="Do you want to proceed? [y/N]"
 )
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
+  if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG" && [[ -f "$TMP/has-session-count" ]] && (( $(<"$TMP/has-session-count") >= 3 )); then
     break
   fi
   sleep 0.1

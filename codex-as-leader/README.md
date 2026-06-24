@@ -119,7 +119,11 @@ launcher. This workflow tells the leader to coordinate and integrate role-owned
 work instead of doing the whole project alone. For example, `classic` mode asks
 the leader to consult `architect`, `frontend`, and `backend` before
 cross-cutting implementation; `advanced` mode adds interaction and QA gates.
-These dynamic workflow prompts are not written to project files.
+The injected leader prompt also includes a leadership operating contract:
+leaders must build an ownership map before implementation, resolve role targets
+from `RMUX_MEMBER_TARGETS` instead of pane order, delegate member-owned work, and
+report role contributions before the final answer. These dynamic workflow
+prompts are not written to project files.
 
 The launcher also starts a passive alert watcher for member panes. If a member
 appears to be waiting for approval or interactive confirmation, the watcher
