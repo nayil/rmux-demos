@@ -160,9 +160,28 @@ if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-border-statu
   exit 1
 fi
 
-if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-border-format #[align=left]#[bold,fg=black,bg=yellow] #{pane_title} #[default]' "$LOG"; then
-  echo "launcher did not configure highlighted left-aligned pane titles" >&2
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-active-border-style fg=yellow' "$LOG"; then
+  echo "launcher did not configure active pane border color" >&2
   cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-border-style fg=colour238' "$LOG"; then
+  echo "launcher did not configure inactive pane border color" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+border_format_lines="$(grep 'pane-border-format' "$LOG")"
+if grep -Fq '#{pane_title}' <<<"$border_format_lines"; then
+  echo "pane border format should not depend on pane_title because Claude overwrites it" >&2
+  printf '%s\n' "$border_format_lines" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'pane-border-format #[align=left]#{?pane_active,#[bold,fg=black,bg=yellow],#[bold,fg=colour250,bg=colour238]}' <<<"$border_format_lines"; then
+  echo "launcher did not configure highlighted left-aligned pane titles" >&2
+  printf '%s\n' "$border_format_lines" >&2
   exit 1
 fi
 
@@ -229,6 +248,25 @@ if ! grep -Fq 'Frontend\ Engineer' "$LOG"; then
   cat "$LOG" >&2
   exit 1
 fi
+
+classic_border_format="$(grep 'pane-border-format' "$LOG" | tail -n 1)"
+
+case "$classic_border_format" in
+  *'#{pane_title}'*)
+    echo "classic border format should not depend on pane_title" >&2
+    echo "$classic_border_format" >&2
+    exit 1
+    ;;
+esac
+
+case "$classic_border_format" in
+  *'#{?#{==:#{pane_id},%1},frontend,'*'#{?#{==:#{pane_id},%3},backend,'*'#{?#{==:#{pane_id},%4},architect,'*'#{?#{==:#{pane_id},%2},leader,'*) ;;
+  *)
+    echo "classic border format did not map pane ids to stable role labels" >&2
+    echo "$classic_border_format" >&2
+    exit 1
+    ;;
+esac
 
 HELP="$TMP/help.txt"
 "$ROOT/launch.sh" help >"$HELP"

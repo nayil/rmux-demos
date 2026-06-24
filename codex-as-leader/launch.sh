@@ -393,13 +393,26 @@ next_session_name() {
 }
 
 configure_pane_titles() {
+  local leader_target="$1"
   local target="$SESSION:$WINDOW"
-  local border_format='#[align=left]#[bold,fg=black,bg=yellow] #{pane_title} #[default]'
+  local role_expr=""
+  local border_format
+  local i
 
+  for i in "${!member_targets[@]}"; do
+    role_expr+="#{?#{==:#{pane_id},${member_targets[$i]}},${MEMBER_NAMES[$i]},"
+  done
+  role_expr+="#{?#{==:#{pane_id},$leader_target},leader,pane}"
+  for i in "${!member_targets[@]}"; do
+    role_expr+="}"
+  done
+
+  border_format="#[align=left]#{?pane_active,#[bold,fg=black,bg=yellow],#[bold,fg=colour250,bg=colour238]} $role_expr #[default]"
+
+  rmux_demo set-option -w -t "$target" pane-active-border-style fg=yellow >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" pane-border-style fg=colour238 >/dev/null 2>&1 || true
   rmux_demo set-option -w -t "$target" pane-border-status top >/dev/null
-  if ! rmux_demo set-option -w -t "$target" pane-border-format "$border_format" >/dev/null 2>&1; then
-    rmux_demo set-option -w -t "$target" pane-border-format '#[bold,fg=black,bg=yellow] #{pane_title} #[default]' >/dev/null
-  fi
+  rmux_demo set-option -w -t "$target" pane-border-format "$border_format" >/dev/null
 }
 
 leader_command() {
@@ -584,7 +597,7 @@ launch() {
 
   rmux_demo respawn-pane -k -t "$leader_target" "$(leader_command "$member_targets_string" "$member_roles_string" "${member_targets[0]:-}" "${member_targets[1]:-}")"
   rmux_demo select-pane -t "$leader_target" -T "leader: codex" >/dev/null 2>&1 || true
-  configure_pane_titles
+  configure_pane_titles "$leader_target"
   rmux_demo select-pane -t "$leader_target"
 
   echo "workgroup started"

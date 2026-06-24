@@ -114,6 +114,11 @@ Each member is started with a role prompt matching its pane title. For example,
 `classic` mode starts `frontend`, `backend`, and `architect` members with
 focused role definitions before the leader begins.
 
+Pane border labels are rendered from the launcher's pane-id to role mapping, not
+from the terminal pane title. This keeps role labels such as `frontend`,
+`backend`, `architect`, and `leader` stable even when Claude updates the terminal
+title internally.
+
 Example command override:
 
 ```bash
