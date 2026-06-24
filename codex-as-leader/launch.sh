@@ -23,6 +23,11 @@ WORKGROUP_MODE=""
 MEMBER_NAMES=()
 MEMBER_ROLE_TITLES=()
 MEMBER_ROLE_PROMPTS=()
+ALERT_ROOT=""
+ALERT_DIR=""
+ALERT_LOG=""
+ALERT_INTERVAL="${RMUX_ALERT_INTERVAL:-2}"
+ALERT_WATCH="${RMUX_ALERT_WATCH:-1}"
 
 DEFAULT_CLAUDE_CMD="dclaude"
 MEMBER_CMD="${CLAUDE_CMD:-$DEFAULT_CLAUDE_CMD}"
@@ -72,7 +77,7 @@ print_help() {
 usage:
   ./launch.sh [launch [WORKDIR] [N]]
   ./launch.sh [launch [WORKDIR] --mode MODE]
-  ./launch.sh check|list|attach [SESSION]|cleanup [SESSION]|help
+  ./launch.sh check|list|attach [SESSION]|alerts [SESSION]|cleanup [SESSION]|help
 
 modes:
   simple    developer, reviewer
@@ -87,7 +92,62 @@ modes:
 priority:
   mode overrides N. If mode is set, its role list determines member count.
   Modes with more than three members use a two-row member grid above the leader.
+
+alerts:
+  Member approval/confirmation alerts are written under alerts/<session>/.
+  Use ./launch.sh alerts [SESSION] to read the session-scoped alert log.
 EOF
+}
+
+safe_session_name() {
+  local name="$1"
+  name="${name//\//_}"
+  name="${name// /_}"
+  printf "%s" "$name"
+}
+
+alert_root() {
+  local socket_parent
+
+  case "$SOCKET" in
+    \\\\.*|*.pipe)
+      printf "%s/alerts" "$SOCKET_DIR"
+      ;;
+    *)
+      socket_parent="$(dirname "$SOCKET")"
+      printf "%s/alerts" "$socket_parent"
+      ;;
+  esac
+}
+
+alert_dir_for_session() {
+  local session_name="$1"
+  printf "%s/%s" "$(alert_root)" "$(safe_session_name "$session_name")"
+}
+
+init_alert_log() {
+  ALERT_ROOT="$(alert_root)"
+  ALERT_DIR="$(alert_dir_for_session "$SESSION")"
+  ALERT_LOG="$ALERT_DIR/alerts.log"
+  install -d -m 700 "$ALERT_DIR"
+  touch "$ALERT_LOG"
+}
+
+alert_state_path() {
+  local name="$1"
+  printf "%s/%s.waiting" "$ALERT_DIR" "$(safe_session_name "$name")"
+}
+
+alerts() {
+  local session_name="${1:-$SESSION_BASE}"
+  local log_path
+
+  log_path="$(alert_dir_for_session "$session_name")/alerts.log"
+  if [[ ! -f "$log_path" ]]; then
+    echo "no alerts for session: $session_name"
+    return 0
+  fi
+  cat "$log_path"
 }
 
 resolve_workdir() {
@@ -496,10 +556,15 @@ configure_pane_titles() {
   local target="$SESSION:$WINDOW"
   local role_expr=""
   local border_format
+  local role_label
   local i
 
   for i in "${!member_targets[@]}"; do
-    role_expr+="#{?#{==:#{pane_id},${member_targets[$i]}},${MEMBER_NAMES[$i]},"
+    role_label="${MEMBER_NAMES[$i]}"
+    if [[ -n "$ALERT_DIR" && -f "$(alert_state_path "$role_label")" ]]; then
+      role_label="! $role_label"
+    fi
+    role_expr+="#{?#{==:#{pane_id},${member_targets[$i]}},$role_label,"
   done
   role_expr+="#{?#{==:#{pane_id},$leader_target},leader,pane}"
   for i in "${!member_targets[@]}"; do
@@ -517,7 +582,7 @@ configure_pane_titles() {
 leader_command() {
   local member_targets="$1"
   local member_roles="$2"
-  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q leader_prompt leader_prompt_q leader_workflow leader_cmd
+  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q alert_dir_q alert_log_q leader_prompt leader_prompt_q leader_workflow leader_cmd
 
   socket_q="$(q "$SOCKET")"
   session_q="$(q "$SESSION")"
@@ -528,8 +593,10 @@ leader_command() {
   roles_q="$(q "$member_roles")"
   demo_dir_q="$(q "$DEMO_DIR")"
   workdir_q="$(q "$WORKDIR")"
+  alert_dir_q="$(q "$ALERT_DIR")"
+  alert_log_q="$(q "$ALERT_LOG")"
   leader_workflow="$(leader_workflow_prompt "$WORKGROUP_MODE")"
-  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s\n\n%s" \
+  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s\n\n%s\n\nPassive member alerts:\n- Member approval/confirmation alerts are written to \$RMUX_ALERT_LOG.\n- When waiting for members, run ./launch.sh alerts \"\$RMUX_WORKGROUP_SESSION\" or inspect \$RMUX_ALERT_LOG before assuming they are still working.\n- Alert logs are scoped per rmux session under \$RMUX_ALERT_DIR." \
     "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")" "$leader_workflow"
   leader_prompt_q="$(q "$leader_prompt")"
 
@@ -539,8 +606,8 @@ leader_command() {
     leader_cmd="codex --dangerously-bypass-approvals-and-sandbox -C $workdir_q --add-dir $demo_dir_q $leader_prompt_q"
   fi
 
-  printf "cd %s; export RMUX_DEMO_SOCKET=%s; export RMUX_WORKGROUP_SESSION=%s; export RMUX_WORKGROUP_MODE=%s; export RMUX_MEMBER_COUNT=%s; export RMUX_MEMBER_TARGETS=%s; export RMUX_MEMBER_ROLES=%s; export RMUX_MEMBER1_TARGET=%s; export RMUX_MEMBER2_TARGET=%s; export RMUX_WORKDIR=%s; exec env IS_DEMO=1 %s" \
-    "$demo_dir_q" "$socket_q" "$session_q" "$mode_q" "$MEMBER_COUNT" "$members_q" "$roles_q" "$member1_q" "$member2_q" "$workdir_q" "$leader_cmd"
+  printf "cd %s; export RMUX_DEMO_SOCKET=%s; export RMUX_WORKGROUP_SESSION=%s; export RMUX_WORKGROUP_MODE=%s; export RMUX_MEMBER_COUNT=%s; export RMUX_MEMBER_TARGETS=%s; export RMUX_MEMBER_ROLES=%s; export RMUX_MEMBER1_TARGET=%s; export RMUX_MEMBER2_TARGET=%s; export RMUX_ALERT_DIR=%s; export RMUX_ALERT_LOG=%s; export RMUX_WORKDIR=%s; exec env IS_DEMO=1 %s" \
+    "$demo_dir_q" "$socket_q" "$session_q" "$mode_q" "$MEMBER_COUNT" "$members_q" "$roles_q" "$member1_q" "$member2_q" "$alert_dir_q" "$alert_log_q" "$workdir_q" "$leader_cmd"
 }
 
 member_command() {
@@ -564,6 +631,92 @@ set_member_title() {
   local target="$2"
 
   rmux_demo select-pane -t "$target" -T "${MEMBER_NAMES[$index]}: claude" >/dev/null 2>&1 || true
+}
+
+alert_line_from_capture() {
+  local line
+  local alert_regex='(Do you want to proceed|Would you like to|Allow|approve|approval|permission|Press Enter|\[[yY]/[nN]\]|\[[yY]/N\]|\([yY]/[nN]\)|是否继续|授权|确认|允许|继续吗)'
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ $alert_regex ]]; then
+      printf "%s" "$line"
+      return 0
+    fi
+  done
+  return 1
+}
+
+active_alert_names() {
+  local names=()
+  local name
+
+  for name in "${MEMBER_NAMES[@]}"; do
+    if [[ -f "$(alert_state_path "$name")" ]]; then
+      names+=("$name")
+    fi
+  done
+
+  local IFS=","
+  printf "%s" "${names[*]}"
+}
+
+refresh_alert_visuals() {
+  local leader_target="$1"
+  local active_names
+
+  configure_pane_titles "$leader_target"
+  active_names="$(active_alert_names)"
+  if [[ -n "$active_names" ]]; then
+    rmux_demo display-message -t "$SESSION:$WINDOW" "WAITING: $active_names needs approval/confirmation" >/dev/null 2>&1 || true
+  fi
+}
+
+start_alert_watcher() {
+  local leader_target="$1"
+  local watch_names=("${MEMBER_NAMES[@]}")
+  local watch_targets=("${member_targets[@]}")
+
+  if [[ "$ALERT_WATCH" == "0" ]]; then
+    return
+  fi
+
+  (
+    MEMBER_NAMES=("${watch_names[@]}")
+    member_targets=("${watch_targets[@]}")
+
+    while rmux_demo has-session -t "$SESSION" >/dev/null 2>&1; do
+      local changed=0
+      local i name target capture line state_path timestamp
+
+      for i in "${!member_targets[@]}"; do
+        name="${MEMBER_NAMES[$i]}"
+        target="${member_targets[$i]}"
+        state_path="$(alert_state_path "$name")"
+        capture="$(rmux_demo capture-pane -p -t "$target" -S -80 2>/dev/null || true)"
+
+        if line="$(alert_line_from_capture <<<"$capture")"; then
+          if [[ ! -f "$state_path" ]]; then
+            timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+            printf '%s\t%s\t%s\t%s\n' "$timestamp" "$name" "$target" "$line" >>"$ALERT_LOG"
+            touch "$state_path"
+            rmux_demo select-pane -t "$target" -T "! $name: claude" >/dev/null 2>&1 || true
+            changed=1
+          fi
+        elif [[ -f "$state_path" ]]; then
+          rm -f "$state_path"
+          rmux_demo select-pane -t "$target" -T "$name: claude" >/dev/null 2>&1 || true
+          changed=1
+        fi
+      done
+
+      if (( changed )); then
+        refresh_alert_visuals "$leader_target"
+      fi
+      sleep "$ALERT_INTERVAL"
+    done
+  ) >/dev/null 2>&1 &
+
+  printf '%s\n' "$!" >"$ALERT_DIR/watcher.pid"
 }
 
 split_member_pane() {
@@ -674,6 +827,7 @@ launch() {
   check
   install -d -m 700 "$SOCKET_DIR"
   SESSION="$(next_session_name "$SESSION_BASE")"
+  init_alert_log
 
   member1_target="$(rmux_demo new-session -d -P -F '#{pane_id}' -s "$SESSION" -n "$WINDOW" -x 160 -y 42 "$(member_command "$MEMBER_CMD" "${MEMBER_ROLE_PROMPTS[0]}")")"
   member_targets+=("$member1_target")
@@ -698,6 +852,7 @@ launch() {
   rmux_demo respawn-pane -k -t "$leader_target" "$(leader_command "$member_targets_string" "$member_roles_string" "${member_targets[0]:-}" "${member_targets[1]:-}")"
   rmux_demo select-pane -t "$leader_target" -T "leader: codex" >/dev/null 2>&1 || true
   configure_pane_titles "$leader_target"
+  start_alert_watcher "$leader_target"
   rmux_demo select-pane -t "$leader_target"
 
   echo "workgroup started"
@@ -706,6 +861,7 @@ launch() {
   echo "workdir: $WORKDIR"
   echo "mode: $WORKGROUP_MODE"
   echo "members: $MEMBER_COUNT"
+  echo "alerts: $ALERT_LOG"
   for i in "${!member_targets[@]}"; do
     echo "${MEMBER_NAMES[$i]}: ${member_targets[$i]}"
   done
@@ -723,6 +879,7 @@ case "$COMMAND" in
   check) check ;;
   help|-h|--help) print_help ;;
   list) list_sessions ;;
+  alerts) alerts "${2:-}" ;;
   cleanup) cleanup "${2:-}" ;;
   attach) attach "${2:-}" ;;
   /*|.|..|./*|../*) launch "$@" ;;

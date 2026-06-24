@@ -121,6 +121,20 @@ the leader to consult `architect`, `frontend`, and `backend` before
 cross-cutting implementation; `advanced` mode adds interaction and QA gates.
 These dynamic workflow prompts are not written to project files.
 
+The launcher also starts a passive alert watcher for member panes. If a member
+appears to be waiting for approval or interactive confirmation, the watcher
+writes a session-scoped alert to `alerts/<session>/alerts.log`, updates that
+member's pane label to `! role`, and shows an rmux message. It does not inject
+input into the leader or member panes. The leader receives `RMUX_ALERT_DIR` and
+`RMUX_ALERT_LOG`, and you can read the same log with:
+
+```bash
+./launch.sh alerts codex-as-leader
+```
+
+Each rmux session gets its own alert directory, so alerts from parallel
+workgroups do not overwrite each other.
+
 Pane border labels are rendered from the launcher's pane-id to role mapping, not
 from the terminal pane title. This keeps role labels such as `frontend`,
 `backend`, `architect`, and `leader` stable even when Claude updates the terminal
