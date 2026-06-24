@@ -17,8 +17,9 @@ LAUNCH_CWD="$(pwd)"
 WORKDIR_INPUT="${RMUX_WORKDIR:-${WORKDIR:-$LAUNCH_CWD}}"
 WORKDIR=""
 
-MEMBER1_CMD="${CLAUDE_CMD:-claude --dangerously-skip-permissions --permission-mode bypassPermissions}"
-MEMBER2_CMD="${CLAUDE_CMD:-claude --dangerously-skip-permissions --permission-mode bypassPermissions}"
+DEFAULT_CLAUDE_CMD="dclaude"
+MEMBER1_CMD="${CLAUDE_CMD:-$DEFAULT_CLAUDE_CMD}"
+MEMBER2_CMD="${CLAUDE_CMD:-$DEFAULT_CLAUDE_CMD}"
 
 q() {
   printf "%q" "$1"
@@ -35,13 +36,13 @@ need() {
   }
 }
 
-need_zsh_command() {
+need_bash_command() {
   local name="$1"
   local name_q
 
   name_q="$(q "$name")"
-  zsh -ic "type $name_q" >/dev/null 2>&1 || {
-    echo "missing zsh command/function/alias: $name" >&2
+  bash -ic "type $name_q" >/dev/null 2>&1 || {
+    echo "missing bash command/function/alias: $name" >&2
     exit 1
   }
 }
@@ -49,9 +50,11 @@ need_zsh_command() {
 check() {
   need rmux
   need codex
-  need claude
-  need zsh
-  echo "rmux, codex, claude and zsh are available"
+  need bash
+  if [[ -z "${CLAUDE_CMD:-}" ]]; then
+    need_bash_command "$DEFAULT_CLAUDE_CMD"
+  fi
+  echo "rmux, codex and bash are available"
 }
 
 resolve_workdir() {
@@ -213,10 +216,12 @@ leader_command() {
 
 member_command() {
   local member_cmd="$1"
-  local workdir_q
+  local workdir_q inner_script inner_script_q
 
   workdir_q="$(q "$WORKDIR")"
-  printf "cd %s; export RMUX_WORKDIR=%s; exec %s" "$workdir_q" "$workdir_q" "$member_cmd"
+  printf -v inner_script "cd %s; export RMUX_WORKDIR=%s; %s" "$workdir_q" "$workdir_q" "$member_cmd"
+  inner_script_q="$(q "$inner_script")"
+  printf "exec bash -lic %s" "$inner_script_q"
 }
 
 launch() {
@@ -231,10 +236,10 @@ launch() {
   member1_target="$(rmux_demo new-session -d -P -F '#{pane_id}' -s "$SESSION" -n "$WINDOW" -x 160 -y 42 "$(member_command "$MEMBER1_CMD")")"
   rmux_demo select-pane -t "$member1_target" -T "member1: claude" >/dev/null 2>&1 || true
 
+  leader_target="$(rmux_demo split-window -v -P -F '#{pane_id}' -t "$member1_target" -p 50 "sleep 3600")"
+
   member2_target="$(rmux_demo split-window -h -P -F '#{pane_id}' -t "$member1_target" -p 50 "$(member_command "$MEMBER2_CMD")")"
   rmux_demo select-pane -t "$member2_target" -T "member2: claude" >/dev/null 2>&1 || true
-
-  leader_target="$(rmux_demo split-window -v -P -F '#{pane_id}' -t "$member1_target" -p 50 "sleep 3600")"
 
   rmux_demo respawn-pane -k -t "$leader_target" "$(leader_command "$member1_target" "$member2_target")"
   rmux_demo select-pane -t "$leader_target" -T "leader: codex" >/dev/null 2>&1 || true

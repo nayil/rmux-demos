@@ -21,7 +21,8 @@ output.
 
 ## Requirements
 
-`rmux`, `codex`, `claude`, and `zsh` must be available in `PATH`.
+`rmux`, `codex`, and `bash` must be available in `PATH`. By default, member
+panes start with the `dclaude` command/function/alias loaded from `~/.bashrc`.
 
 ## Run
 
