@@ -61,11 +61,7 @@ case "$cmd" in
     fi
     count=$((count + 1))
     printf '%s' "$count" >"$count_file"
-    if [[ "$count" -eq 1 ]]; then
-      printf '%%2\n'
-    else
-      printf '%%3\n'
-    fi
+    printf '%%%d\n' "$((count + 1))"
     ;;
   select-pane|respawn-pane|attach-session|kill-session|kill-server)
     exit 0
@@ -88,6 +84,34 @@ export CLAUDE_CMD="dclaude"
 
 leader_cmd="$(grep '^respawn-pane ' "$LOG" | tail -n 1)"
 
+if ! grep -Fq 'select-pane -t %1 -T developer: claude' "$LOG"; then
+  echo "default launch did not use simple mode developer role" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %3 -T reviewer: claude' "$LOG"; then
+  echo "default launch did not use simple mode reviewer role" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+case "$leader_cmd" in
+  *"export RMUX_WORKGROUP_MODE=simple;"*"export RMUX_MEMBER_COUNT=2;"*) ;;
+  *)
+    echo "default launch did not export simple mode with two members" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(cd "$STARTDIR" && "$ROOT/launch.sh" launch "$WORKDIR" 3 >/dev/null)
+
+leader_cmd="$(grep '^respawn-pane ' "$LOG" | tail -n 1)"
+
 case "$leader_cmd" in
   *"codex --dangerously-bypass-approvals-and-sandbox -C $WORKDIR --add-dir $ROOT"*) ;;
   *)
@@ -105,3 +129,170 @@ case "$leader_cmd" in
     exit 1
     ;;
 esac
+
+if ! grep -Fq 'select-pane -t %4 -T member3: claude' "$LOG"; then
+  echo "launcher did not create and title member3 when member count is 3" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+case "$leader_cmd" in
+  *"export RMUX_MEMBER_COUNT=3;"*) ;;
+  *)
+    echo "leader command did not export RMUX_MEMBER_COUNT=3" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"export RMUX_MEMBER_TARGETS=member1=%1\\ member2=%3\\ member3=%4;"*) ;;
+  *)
+    echo "leader command did not export all member targets" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-border-status top' "$LOG"; then
+  echo "launcher did not enable top pane border titles" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup pane-border-format #[align=left]#[bold,fg=black,bg=yellow] #{pane_title} #[default]' "$LOG"; then
+  echo "launcher did not configure highlighted left-aligned pane titles" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(cd "$STARTDIR" && "$ROOT/launch.sh" launch "$WORKDIR" 8 --mode classic >/dev/null)
+
+leader_cmd="$(grep '^respawn-pane ' "$LOG" | tail -n 1)"
+
+if ! grep -Fq 'select-pane -t %1 -T frontend: claude' "$LOG"; then
+  echo "classic mode did not title the first member as frontend" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %3 -T backend: claude' "$LOG"; then
+  echo "classic mode did not title the second member as backend" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %4 -T architect: claude' "$LOG"; then
+  echo "classic mode did not title the third member as architect" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if grep -Fq 'member8:' "$LOG"; then
+  echo "mode did not take precedence over member count" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+case "$leader_cmd" in
+  *"export RMUX_WORKGROUP_MODE=classic;"*"export RMUX_MEMBER_COUNT=3;"*) ;;
+  *)
+    echo "leader command did not export classic mode with mode-derived member count" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"export RMUX_MEMBER_TARGETS=frontend=%1\\ backend=%3\\ architect=%4;"*) ;;
+  *)
+    echo "leader command did not export classic role targets" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"export RMUX_MEMBER_ROLES=frontend=Frontend\\ Engineer\\,backend=Backend\\ Engineer\\,architect=Software\\ Architect;"*) ;;
+  *)
+    echo "leader command did not export classic role descriptions" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+if ! grep -Fq 'Frontend\ Engineer' "$LOG"; then
+  echo "frontend member command did not receive a role prompt" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+HELP="$TMP/help.txt"
+"$ROOT/launch.sh" help >"$HELP"
+
+if ! grep -Fq 'classic   frontend, backend, architect' "$HELP"; then
+  echo "help did not describe classic mode roles" >&2
+  cat "$HELP" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(cd "$STARTDIR" && "$ROOT/launch.sh" launch "$WORKDIR" --mode advanced >/dev/null)
+
+leader_cmd="$(grep '^respawn-pane ' "$LOG" | tail -n 1)"
+
+case "$leader_cmd" in
+  *"export RMUX_WORKGROUP_MODE=advanced;"*"export RMUX_MEMBER_COUNT=5;"*) ;;
+  *)
+    echo "advanced mode did not export its mode-derived member count" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+if ! grep -Fq 'select-pane -t %1 -T frontend: claude' "$LOG"; then
+  echo "advanced mode did not title frontend" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %3 -T interaction: claude' "$LOG"; then
+  echo "advanced mode did not title interaction" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %4 -T backend: claude' "$LOG"; then
+  echo "advanced mode did not title backend" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %5 -T architect: claude' "$LOG"; then
+  echo "advanced mode did not place architect in the second member row" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select-pane -t %6 -T qa: claude' "$LOG"; then
+  echo "advanced mode did not place qa in the second member row" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -F 'split-window -v -P -F #{pane_id} -t %1 -p 50' "$LOG" | grep -Fq 'architect'; then
+  echo "advanced mode did not split architect below the first member column" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -F 'split-window -v -P -F #{pane_id} -t %3 -p 50' "$LOG" | grep -Fq 'qa'; then
+  echo "advanced mode did not split qa below the second member column" >&2
+  cat "$LOG" >&2
+  exit 1
+fi

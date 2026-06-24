@@ -1,13 +1,13 @@
 # codex-as-leader
 
-Codex runs as the leader of a three-pane rmux workgroup. Claude is member1 and
-member2.
+Codex runs as the leader of an rmux workgroup. Claude member panes can be
+created either as generic numbered members or as named roles from a team mode.
 
-Each launch creates one rmux session with this layout:
+By default, each launch uses `simple` mode:
 
 ```text
 +----------------------+----------------------+
-| member1: claude      | member2: claude      |
+| developer: claude    | reviewer: claude     |
 |                      |                      |
 +----------------------+----------------------+
 | leader: codex                               |
@@ -18,6 +18,11 @@ Each launch creates one rmux session with this layout:
 The leader receives rmux context through environment variables and can send
 messages to either member, broadcast to both members, and capture their pane
 output.
+
+When a mode has more than three members, the launcher keeps the leader pane as a
+full-width bottom pane and arranges the member panes above it in a two-row grid.
+This keeps `product` and `advanced` formations readable on normal terminal
+sizes.
 
 ## Requirements
 
@@ -35,12 +40,24 @@ You can run `./launch.sh` multiple times. If the default session name already
 exists, the launcher creates the next available session name, such as
 `codex-as-leader-2`.
 
-By default, all agents work in the current directory where you run `launch.sh`.
-To make leader, member1, and member2 work in another directory, pass it to
-`launch`:
+By default, all agents work in the current directory where you run `launch.sh`,
+using `simple` mode. To make leader and members work in another directory, pass
+it to `launch`:
 
 ```bash
 ./launch.sh launch /path/to/project
+```
+
+To choose the number of member panes, pass `N` after the workdir:
+
+```bash
+./launch.sh launch /path/to/project 3
+```
+
+You can also use the current directory with a custom member count:
+
+```bash
+./launch.sh launch 3
 ```
 
 or set `RMUX_WORKDIR`:
@@ -49,12 +66,53 @@ or set `RMUX_WORKDIR`:
 RMUX_WORKDIR=/path/to/project ./launch.sh
 ```
 
+The member count can also come from `RMUX_MEMBER_COUNT`:
+
+```bash
+RMUX_MEMBER_COUNT=3 ./launch.sh
+```
+
+To choose a named team formation, pass `--mode MODE`:
+
+```bash
+./launch.sh launch /path/to/project --mode classic
+./launch.sh launch --mode advanced
+```
+
+`mode` has higher priority than `N`, so this starts the `classic` formation, not
+eight generic members:
+
+```bash
+./launch.sh launch /path/to/project 8 --mode classic
+```
+
+The same option is available through the environment:
+
+```bash
+RMUX_WORKGROUP_MODE=product ./launch.sh
+```
+
+Run `./launch.sh help` to see the built-in modes:
+
+```text
+simple    developer, reviewer
+classic   frontend, backend, architect
+product   product, designer, developer, qa
+advanced  frontend, interaction, backend, architect, qa
+```
+
 The member panes start after `cd "$RMUX_WORKDIR"`. The leader keeps this demo
 directory as its shell cwd so the launcher can read the rmux control
 instructions, while the default Codex command receives `-C "$RMUX_WORKDIR"` and
 `--add-dir <demo-dir>`. That makes the target project the Codex primary root, so
 its `AGENTS.md` is injected normally, and passes this demo's leader workgroup
-instructions as the initial prompt.
+instructions as the initial prompt. The leader receives `RMUX_WORKGROUP_MODE`,
+`RMUX_MEMBER_COUNT`, `RMUX_MEMBER_TARGETS`, `RMUX_MEMBER_ROLES`, and
+compatibility aliases for the first two members.
+
+Each member is started with a role prompt matching its pane title. For example,
+`classic` mode starts `frontend`, `backend`, and `architect` members with
+focused role definitions before the leader begins.
 
 Example command override:
 
@@ -73,7 +131,8 @@ CODEX_CMD="codex --dangerously-bypass-approvals-and-sandbox -C /path/to/project 
 ```text
 Send Hi to both members
 Read both members and summarize what they answered
-Ask member1 to propose a plan, ask member2 to review it, then compare their answers
+Ask developer to propose a plan, ask reviewer to review it, then compare their answers
+Start classic mode and ask frontend/backend/architect for their first-pass risks
 ```
 
 ## Cleanup
