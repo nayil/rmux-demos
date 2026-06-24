@@ -105,6 +105,15 @@ case "$leader_cmd" in
     ;;
 esac
 
+case "$leader_cmd" in
+  *"Mode-specific leader workflow: simple"*"leader -> developer: implement"*"Developer owns implementation; reviewer owns validation"*) ;;
+  *)
+    echo "default launch did not inject a mode-specific leader workflow" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
 : >"$LOG"
 rm -f "$RMUX_TEST_SPLIT_COUNT"
 
@@ -149,6 +158,15 @@ case "$leader_cmd" in
   *"export RMUX_MEMBER_TARGETS=member1=%1\\ member2=%3\\ member3=%4;"*) ;;
   *)
     echo "leader command did not export all member targets" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"leader -> each member: assign scoped responsibility"*"Leader must name ownership explicitly"*) ;;
+  *)
+    echo "custom member-count launch did not inject the custom leader workflow" >&2
     echo "$leader_cmd" >&2
     exit 1
     ;;
@@ -249,6 +267,15 @@ if ! grep -Fq 'Frontend\ Engineer' "$LOG"; then
   exit 1
 fi
 
+case "$leader_cmd" in
+  *"Mode-specific leader workflow: classic"*"leader -> architect: boundaries/risks"*"Leader must delegate frontend/backend/architecture work"*) ;;
+  *)
+    echo "classic launch did not inject the classic leader workflow" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
 classic_border_format="$(grep 'pane-border-format' "$LOG" | tail -n 1)"
 
 case "$classic_border_format" in
@@ -288,6 +315,15 @@ case "$leader_cmd" in
   *"export RMUX_WORKGROUP_MODE=advanced;"*"export RMUX_MEMBER_COUNT=5;"*) ;;
   *)
     echo "advanced mode did not export its mode-derived member count" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"Mode-specific leader workflow: advanced"*"leader -> interaction: flows/accessibility"*"leader -> qa: test strategy"*"final gates"*) ;;
+  *)
+    echo "advanced launch did not inject the advanced leader workflow" >&2
     echo "$leader_cmd" >&2
     exit 1
     ;;

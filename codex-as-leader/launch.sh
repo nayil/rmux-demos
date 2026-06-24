@@ -229,6 +229,105 @@ Collaboration rules:
 EOF
 }
 
+leader_workflow_prompt() {
+  case "$1" in
+    simple)
+      cat <<'EOF'
+Mode-specific leader workflow: simple
+
+Workflow graph:
+leader -> developer: implement
+developer -> leader: patch/result
+leader -> reviewer: review/test
+reviewer -> leader: findings
+leader -> developer: fix if needed
+leader -> final: summarize
+
+Rules:
+- Leader coordinates, inspects, and integrates.
+- Developer owns implementation; reviewer owns validation.
+- Leader must not do the whole task alone unless the work is a tiny control-plane fix.
+EOF
+      ;;
+    classic)
+      cat <<'EOF'
+Mode-specific leader workflow: classic
+
+Workflow graph:
+leader -> architect: boundaries/risks
+leader -> frontend: UI/client plan
+leader -> backend: API/data plan
+architect -> leader: integration constraints
+frontend/backend -> leader: implementation notes
+leader -> architect: final coherence review
+leader -> final: integrated decision
+
+Rules:
+- Leader must delegate frontend/backend/architecture work before implementing cross-cutting changes.
+- Frontend owns client-facing behavior; backend owns API/data/runtime behavior; architect owns boundaries and risk.
+- Leader integrates role outputs and may only do direct edits after ownership is clear.
+EOF
+      ;;
+    product)
+      cat <<'EOF'
+Mode-specific leader workflow: product
+
+Workflow graph:
+leader -> product: scope/acceptance criteria
+leader -> designer: UX/flow
+leader -> developer: implementation plan
+leader -> qa: test matrix
+product/designer/developer/qa -> leader: role outputs
+leader -> developer: execute scoped changes
+leader -> qa: verify
+leader -> final: release summary
+
+Rules:
+- Product defines what, designer defines experience, developer builds, qa validates.
+- Leader must not collapse product, design, implementation, and QA ownership into one role.
+- Leader integrates decisions and reports which roles participated.
+EOF
+      ;;
+    advanced)
+      cat <<'EOF'
+Mode-specific leader workflow: advanced
+
+Workflow graph:
+leader -> architect: architecture and sequencing
+leader -> interaction: flows/accessibility
+leader -> frontend: UI/state implementation
+leader -> backend: API/data/runtime implementation
+leader -> qa: test strategy
+all roles -> leader: constraints/results
+leader -> qa + architect: final gates
+leader -> final: decision and residual risk
+
+Rules:
+- Leader must gather role-specific input before major implementation and before declaring completion.
+- Interaction owns flows/accessibility; frontend owns UI/state; backend owns API/data/runtime; architect and qa own final gates.
+- Leader integrates, resolves conflicts, and records residual risk.
+EOF
+      ;;
+    *)
+      cat <<'EOF'
+Mode-specific leader workflow: custom
+
+Workflow graph:
+leader -> each member: assign scoped responsibility
+members -> leader: result/risk
+leader -> selected member(s): implementation/fix
+leader -> selected member(s): review/verify
+leader -> final: summarize
+
+Rules:
+- Leader must name ownership explicitly before asking for work.
+- Leader must avoid doing all implementation directly when member panes are available.
+- Final summary should state which members contributed and what they owned.
+EOF
+      ;;
+  esac
+}
+
 configure_members() {
   local requested_mode="$1"
   local requested_count="$2"
@@ -418,7 +517,7 @@ configure_pane_titles() {
 leader_command() {
   local member_targets="$1"
   local member_roles="$2"
-  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q leader_prompt leader_prompt_q leader_cmd
+  local socket_q session_q mode_q member1_q member2_q members_q roles_q demo_dir_q workdir_q leader_prompt leader_prompt_q leader_workflow leader_cmd
 
   socket_q="$(q "$SOCKET")"
   session_q="$(q "$SESSION")"
@@ -429,8 +528,9 @@ leader_command() {
   roles_q="$(q "$member_roles")"
   demo_dir_q="$(q "$DEMO_DIR")"
   workdir_q="$(q "$WORKDIR")"
-  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s" \
-    "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")"
+  leader_workflow="$(leader_workflow_prompt "$WORKGROUP_MODE")"
+  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s\n\n%s" \
+    "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")" "$leader_workflow"
   leader_prompt_q="$(q "$leader_prompt")"
 
   if [[ -n "${CODEX_CMD:-}" ]]; then
