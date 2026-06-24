@@ -12,8 +12,8 @@ fi
 SOCKET="${RMUX_DEMO_SOCKET:-$DEFAULT_SOCKET}"
 
 CODEX_CMD="${CODEX_CMD:-codex --dangerously-bypass-approvals-and-sandbox}"
-GEMINI_CMD="${GEMINI_CMD:-gemini --skip-trust --approval-mode yolo}"
-GROK_CMD="${GROK_CMD:-grok --always-approve}"
+GEMINI_CMD="${GEMINI_CMD:-dclaude}"
+GROK_CMD="${GROK_CMD:-reasonix chat}"
 CLAUDE_CMD="${CLAUDE_CMD:-claude --dangerously-skip-permissions --permission-mode bypassPermissions}"
 
 CODEX_GEOMETRY="${CODEX_GEOMETRY:-96x26+10+40}"
@@ -49,10 +49,8 @@ cleanup() {
 check() {
   need rmux
   need codex
-  need gemini
-  need grok
   need claude
-  echo "rmux, claude, codex, gemini and grok are available"
+  echo "rmux, claude, codex  are available"
 }
 
 open_terminal() {
