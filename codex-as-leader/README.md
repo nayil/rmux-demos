@@ -50,9 +50,11 @@ RMUX_WORKDIR=/path/to/project ./launch.sh
 ```
 
 The member panes start after `cd "$RMUX_WORKDIR"`. The leader keeps this demo
-directory as its process cwd so it can load the rmux control instructions, and
-the default Codex command receives `--add-dir "$RMUX_WORKDIR"` so it can work
-with the target directory without losing workgroup control instructions.
+directory as its shell cwd so the launcher can read the rmux control
+instructions, while the default Codex command receives `-C "$RMUX_WORKDIR"` and
+`--add-dir <demo-dir>`. That makes the target project the Codex primary root, so
+its `AGENTS.md` is injected normally, and passes this demo's leader workgroup
+instructions as the initial prompt.
 
 Example command override:
 
@@ -63,7 +65,7 @@ CLAUDE_CMD="claude --dangerously-skip-permissions --permission-mode bypassPermis
 If you override `CODEX_CMD`, include the working directory yourself:
 
 ```bash
-CODEX_CMD="codex --dangerously-bypass-approvals-and-sandbox --add-dir /path/to/project" ./launch.sh launch /path/to/project
+CODEX_CMD="codex --dangerously-bypass-approvals-and-sandbox -C /path/to/project --add-dir /path/to/codex-as-leader" ./launch.sh launch /path/to/project
 ```
 
 ## Try In Codex

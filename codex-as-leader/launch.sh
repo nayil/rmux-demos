@@ -195,7 +195,7 @@ next_session_name() {
 leader_command() {
   local member1_target="$1"
   local member2_target="$2"
-  local socket_q session_q member1_q member2_q demo_dir_q workdir_q leader_cmd
+  local socket_q session_q member1_q member2_q demo_dir_q workdir_q leader_prompt leader_prompt_q leader_cmd
 
   socket_q="$(q "$SOCKET")"
   session_q="$(q "$SESSION")"
@@ -203,11 +203,14 @@ leader_command() {
   member2_q="$(q "$member2_target")"
   demo_dir_q="$(q "$DEMO_DIR")"
   workdir_q="$(q "$WORKDIR")"
+  printf -v leader_prompt "Use these additional leader workgroup instructions from %s/AGENTS.md:\n\n%s" \
+    "$DEMO_DIR" "$(<"$DEMO_DIR/AGENTS.md")"
+  leader_prompt_q="$(q "$leader_prompt")"
 
   if [[ -n "${CODEX_CMD:-}" ]]; then
     leader_cmd="$CODEX_CMD"
   else
-    leader_cmd="codex --dangerously-bypass-approvals-and-sandbox --add-dir $workdir_q"
+    leader_cmd="codex --dangerously-bypass-approvals-and-sandbox -C $workdir_q --add-dir $demo_dir_q $leader_prompt_q"
   fi
 
   printf "cd %s; export RMUX_DEMO_SOCKET=%s; export RMUX_WORKGROUP_SESSION=%s; export RMUX_MEMBER1_TARGET=%s; export RMUX_MEMBER2_TARGET=%s; export RMUX_WORKDIR=%s; exec env IS_DEMO=1 %s" \
