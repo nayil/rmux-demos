@@ -105,6 +105,12 @@ if ! grep -Fq 'select-pane -t %1 -T developer: claude' "$LOG"; then
   exit 1
 fi
 
+if ! grep -Fq 'dclaude\ --permission-mode\ auto' "$LOG"; then
+  echo "default Claude member command did not enable auto permission mode" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'select-pane -t %3 -T reviewer: claude' "$LOG"; then
   echo "default launch did not use simple mode reviewer role" >&2
   cat "$LOG" >&2
@@ -120,27 +126,85 @@ case "$leader_cmd" in
     ;;
 esac
 
-case "$leader_cmd" in
-  *"Mode-specific leader workflow: simple"*"leader -> developer: implement"*"Developer owns implementation; reviewer owns validation"*) ;;
-  *)
-    echo "default launch did not inject a mode-specific leader workflow" >&2
+for expected in \
+  "Mode-specific context: simple" \
+  "Role ownership" \
+  "developer -> implementation plan, code changes, local self-checks" \
+  "reviewer -> critique, edge cases, regression tests, final review" \
+  "Consultation order" \
+  "developer first for implementation" \
+  "reviewer before final answer"; do
+  if [[ "$leader_cmd" != *"$expected"* ]]; then
+    echo "default launch did not inject lean simple mode context: $expected" >&2
     echo "$leader_cmd" >&2
     exit 1
-    ;;
-esac
+  fi
+done
 
 for expected in \
   "Leadership operating contract" \
+  "Leader mission" \
+  "You are the team driver and inspector, not the default implementer" \
+  "Task intake protocol" \
+  "When the user gives a task, first analyze the problem" \
+  "Identify work domains" \
+  "Build role responsibility mapping" \
   "Build an ownership map before implementation" \
   "Use RMUX_MEMBER_TARGETS as the source of truth" \
   "Do not assume pane order equals role" \
-  "If you bypass a member-owned role, state why"; do
+  "Leader hard boundary" \
+  "You MUST NOT write code" \
+  "You MUST NOT edit configuration" \
+  "You MUST NOT run implementation commands that modify project files" \
+  "All code/config/file changes must be delegated to member agents" \
+  "If all relevant members are blocked or unavailable, stop and report blocked status to the user" \
+  "Mandatory short-cycle protocol" \
+  "Plan -> Delegate -> Wait/Collect -> Integrate -> Verify -> Report" \
+  "You MUST complete one delegation cycle before any implementation work" \
+  "Checkpoint gates" \
+  "Implementation gate" \
+  "Major-change gate" \
+  "Final-answer gate"; do
   if [[ "$leader_cmd" != *"$expected"* ]]; then
     echo "default launch did not inject leader operating contract guardrail: $expected" >&2
     echo "$leader_cmd" >&2
     exit 1
   fi
 done
+
+case "$leader_cmd" in
+  *"Bypass policy"*|*"Gate bypass reason"*|*"tiny control-plane fix"*|*"bypass a member-owned role"*)
+    echo "leader prompt should not include bypass policy or tiny-fix implementation escape hatches" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"Leadership operating contract"*"Codex Leader Workgroup"*) ;;
+  *)
+    echo "leader operating contract should be injected before the rmux operation appendix" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"Mode-specific context: simple"*"Role ownership"*"Consultation order"*) ;;
+  *)
+    echo "simple mode prompt should use lean mode-specific context" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
+
+case "$leader_cmd" in
+  *"Mode-specific leader workflow: simple"*|*"Workflow graph:"*|*"Leader must not do the whole task alone unless"*)
+    echo "mode prompt should not repeat global workflow and anti-single-player rules" >&2
+    echo "$leader_cmd" >&2
+    exit 1
+    ;;
+esac
 
 case "$leader_cmd" in
   *"export RMUX_ALERT_DIR=$TMP/alerts/codex-as-leader-test;"*"export RMUX_ALERT_LOG=$TMP/alerts/codex-as-leader-test/alerts.log;"*) ;;
@@ -213,9 +277,9 @@ case "$leader_cmd" in
 esac
 
 case "$leader_cmd" in
-  *"leader -> each member: assign scoped responsibility"*"Leader must name ownership explicitly"*) ;;
+  *"Mode-specific context: custom"*"each member -> explicitly assigned scoped responsibility"*"Ask at least one member for implementation or analysis and at least one member for review/verification"*) ;;
   *)
-    echo "custom member-count launch did not inject the custom leader workflow" >&2
+    echo "custom member-count launch did not inject lean custom mode context" >&2
     echo "$leader_cmd" >&2
     exit 1
     ;;
@@ -317,20 +381,20 @@ if ! grep -Fq 'Frontend\ Engineer' "$LOG"; then
 fi
 
 case "$leader_cmd" in
-  *"Mode-specific leader workflow: classic"*"leader -> architect: boundaries/risks"*"Leader must delegate frontend/backend/architecture work"*) ;;
+  *"Mode-specific context: classic"*"architect -> boundaries/risks/sequencing"*"Consultation order"*) ;;
   *)
-    echo "classic launch did not inject the classic leader workflow" >&2
+    echo "classic launch did not inject lean classic mode context" >&2
     echo "$leader_cmd" >&2
     exit 1
     ;;
 esac
 
 for expected in \
-  "Classic ownership map" \
+  "Role ownership" \
   "frontend -> UI/client state and browser behavior" \
   "backend -> APIs/data/runtime behavior" \
   "architect -> boundaries/risks/sequencing" \
-  "Required delegation order"; do
+  "Ask architect for boundaries"; do
   if [[ "$leader_cmd" != *"$expected"* ]]; then
     echo "classic launch did not inject explicit role ownership text: $expected" >&2
     echo "$leader_cmd" >&2
@@ -383,20 +447,19 @@ case "$leader_cmd" in
 esac
 
 case "$leader_cmd" in
-  *"Mode-specific leader workflow: advanced"*"leader -> interaction: flows/accessibility"*"leader -> qa: test strategy"*"final gates"*) ;;
+  *"Mode-specific context: advanced"*"interaction -> flows/accessibility/user feedback"*"qa -> test strategy/regression gates"*) ;;
   *)
-    echo "advanced launch did not inject the advanced leader workflow" >&2
+    echo "advanced launch did not inject lean advanced mode context" >&2
     echo "$leader_cmd" >&2
     exit 1
     ;;
 esac
 
 for expected in \
-  "Advanced ownership map" \
+  "Role ownership" \
   "interaction -> flows/accessibility/user feedback" \
   "qa -> test strategy/regression gates" \
-  "Completion checklist" \
-  "Report role contributions before final answer"; do
+  "Return to architect and qa for final gates"; do
   if [[ "$leader_cmd" != *"$expected"* ]]; then
     echo "advanced launch did not inject explicit advanced ownership text: $expected" >&2
     echo "$leader_cmd" >&2
@@ -514,6 +577,48 @@ fi
 
 if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
   echo "alert watcher should not mark a member waiting for ordinary confirmation discussion" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(
+  export CLAUDE_CMD="claude --permission-mode acceptEdits"
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+if ! grep -Fq 'claude\ --permission-mode\ acceptEdits' "$LOG"; then
+  echo "explicit Claude permission mode was not preserved" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if grep -Fq 'claude\ --permission-mode\ acceptEdits\ --permission-mode\ auto' "$LOG"; then
+  echo "launcher should not append auto mode when Claude permission mode is explicit" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+cat >"$FAKEBIN/codex-member" <<'FAKE'
+#!/usr/bin/env bash
+exit 0
+FAKE
+chmod +x "$FAKEBIN/codex-member"
+
+(
+  export CLAUDE_CMD="codex-member"
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+if grep -Fq 'codex-member\ --permission-mode\ auto' "$LOG"; then
+  echo "non-Claude member command should not receive Claude auto mode" >&2
   cat "$LOG" >&2
   exit 1
 fi
