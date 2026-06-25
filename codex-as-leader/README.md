@@ -27,10 +27,10 @@ sizes.
 ## Requirements
 
 `rmux`, `codex`, and `bash` must be available in `PATH`. By default, member
-panes start with the `dclaude` command/function/alias loaded from `~/.bashrc`.
-When the member command is `claude` or `dclaude`, the launcher enables Claude
-auto permission mode by appending `--permission-mode auto` unless the command
-already contains an explicit permission flag.
+panes start with the `dfclaude` command/function/alias loaded from `~/.bashrc`.
+When the member command is `claude`, `dclaude`, or `dfclaude`, the launcher
+enables Claude auto permission mode by appending `--permission-mode auto` unless
+the command already contains an explicit permission flag.
 
 ## Run
 
@@ -138,12 +138,22 @@ are not written to project files.
 The launcher also starts a passive alert watcher for member panes. If a member
 appears to be waiting for approval or interactive confirmation, the watcher
 writes a session-scoped alert to `alerts/<session>/alerts.log`, updates that
-member's pane label to `! role`, and shows an rmux message. It does not inject
-input into the leader or member panes. The leader receives `RMUX_ALERT_DIR` and
-`RMUX_ALERT_LOG`, and you can read the same log with:
+member's border label without changing the active pane. Alert labels use
+`! role` for approval/permission, `? role` for decisions, `x role` for explicit
+`BLOCKED:`/`ERROR:` states, and `ok role` for explicit `DONE:`/`COMPLETED:`
+states. It does not inject input into the leader or member panes. The leader
+receives `RMUX_ALERT_DIR` and `RMUX_ALERT_LOG`, and you can read the latest
+entries with:
 
 ```bash
 ./launch.sh alerts codex-as-leader
+```
+
+Use `--all` to print the whole log, or `--follow` to tail it:
+
+```bash
+./launch.sh alerts codex-as-leader --all
+./launch.sh alerts codex-as-leader --follow
 ```
 
 Each rmux session gets its own alert directory, so alerts from parallel
@@ -153,6 +163,38 @@ Pane border labels are rendered from the launcher's pane-id to role mapping, not
 from the terminal pane title. This keeps role labels such as `frontend`,
 `backend`, `architect`, and `leader` stable even when Claude updates the terminal
 title internally.
+
+The workgroup also has a stable rmux status line showing mode, member count,
+role roster, leader guard, alert log path, and workdir. The status line uses
+visible segments such as `RMUX`, `mode`, and `orchestrator-only`, while pane
+border labels use role-specific color badges so `leader`, `frontend`,
+`backend`, `architect`, `developer`, and `reviewer` are visually distinct. The
+active pane also gets a `>` marker and the launcher asks rmux for heavy pane
+borders when supported. The pane title displays the inferred member agent, such
+as `developer: claude` or `developer: codex`. For modes with more than three
+members, the leader pane uses a compact bottom height and member panes are
+arranged above it in a two-row grid.
+
+Themes are available through `RMUX_THEME`:
+
+```bash
+RMUX_THEME=dark ./launch.sh
+RMUX_THEME=light ./launch.sh
+RMUX_THEME=mono ./launch.sh
+```
+
+Alert polling and message cooldown can be tuned:
+
+```bash
+RMUX_ALERT_INTERVAL=0.5 RMUX_ALERT_COOLDOWN=30 ./launch.sh
+```
+
+Transient rmux alert messages are disabled by default to avoid visual flicker.
+Enable them explicitly when needed:
+
+```bash
+RMUX_ALERT_MESSAGE=1 ./launch.sh
+```
 
 Example command override:
 

@@ -28,12 +28,144 @@ ALERT_DIR=""
 ALERT_LOG=""
 ALERT_INTERVAL="${RMUX_ALERT_INTERVAL:-2}"
 ALERT_WATCH="${RMUX_ALERT_WATCH:-1}"
+ALERT_COOLDOWN="${RMUX_ALERT_COOLDOWN:-30}"
+ALERT_MESSAGE="${RMUX_ALERT_MESSAGE:-0}"
+RMUX_THEME="${RMUX_THEME:-dark}"
+THEME_ACTIVE_BORDER="fg=yellow"
+THEME_INACTIVE_BORDER="fg=colour238"
+THEME_ACTIVE_LABEL="#[bold,fg=black,bg=yellow]"
+THEME_INACTIVE_LABEL="#[bold,fg=colour250,bg=colour238]"
+THEME_STATUS_STYLE="fg=colour250,bg=colour236"
+THEME_STATUS_LEFT_STYLE="#[bold,fg=black,bg=yellow]"
+THEME_STATUS_RIGHT_STYLE="#[fg=colour250,bg=colour236]"
 
 DEFAULT_CLAUDE_CMD="dfclaude"
 MEMBER_CMD="${CLAUDE_CMD:-$DEFAULT_CLAUDE_CMD}"
 
 q() {
   printf "%q" "$1"
+}
+
+apply_theme() {
+  case "$RMUX_THEME" in
+    dark|"")
+      THEME_ACTIVE_BORDER="fg=yellow"
+      THEME_INACTIVE_BORDER="fg=colour238"
+      THEME_ACTIVE_LABEL="#[bold,fg=black,bg=yellow]"
+      THEME_INACTIVE_LABEL="#[bold,fg=colour250,bg=colour238]"
+      THEME_STATUS_STYLE="fg=colour250,bg=colour236"
+      THEME_STATUS_LEFT_STYLE="#[bold,fg=black,bg=yellow]"
+      THEME_STATUS_RIGHT_STYLE="#[fg=colour250,bg=colour236]"
+      ;;
+    light)
+      THEME_ACTIVE_BORDER="fg=blue"
+      THEME_INACTIVE_BORDER="fg=colour250"
+      THEME_ACTIVE_LABEL="#[bold,fg=white,bg=blue]"
+      THEME_INACTIVE_LABEL="#[bold,fg=colour238,bg=colour250]"
+      THEME_STATUS_STYLE="fg=colour238,bg=colour255"
+      THEME_STATUS_LEFT_STYLE="#[bold,fg=white,bg=blue]"
+      THEME_STATUS_RIGHT_STYLE="#[fg=colour238,bg=colour255]"
+      ;;
+    mono)
+      THEME_ACTIVE_BORDER="fg=white"
+      THEME_INACTIVE_BORDER="fg=colour244"
+      THEME_ACTIVE_LABEL="#[bold,fg=black,bg=white]"
+      THEME_INACTIVE_LABEL="#[bold,fg=white,bg=colour238]"
+      THEME_STATUS_STYLE="fg=white,bg=black"
+      THEME_STATUS_LEFT_STYLE="#[bold,fg=black,bg=white]"
+      THEME_STATUS_RIGHT_STYLE="#[fg=white,bg=black]"
+      ;;
+    *)
+      echo "unknown RMUX_THEME: $RMUX_THEME" >&2
+      echo "supported themes: dark, light, mono" >&2
+      exit 2
+      ;;
+  esac
+}
+
+agent_name_from_command() {
+  local cmd="$1"
+  local first="${cmd%% *}"
+  local base="${first##*/}"
+
+  case "$base" in
+    claude|dclaude|dfclaude) printf "claude" ;;
+    codex|codex-*) printf "codex" ;;
+    *) printf "%s" "$base" ;;
+  esac
+}
+
+role_badge_colors() {
+  local role="$1"
+  local marker="${2:-}"
+  local fg="white"
+  local bg="colour244"
+
+  case "$marker" in
+    x)
+      printf "white colour196"
+      return
+      ;;
+    ok)
+      printf "black colour46"
+      return
+      ;;
+    "?")
+      printf "black colour51"
+      return
+      ;;
+    "!")
+      printf "black colour220"
+      return
+      ;;
+  esac
+
+  case "$role" in
+    leader)
+      fg="black"; bg="colour220" ;;
+    developer)
+      fg="white"; bg="colour34" ;;
+    reviewer)
+      fg="white"; bg="colour33" ;;
+    frontend)
+      fg="white"; bg="colour39" ;;
+    backend)
+      fg="white"; bg="colour28" ;;
+    architect)
+      fg="white"; bg="colour93" ;;
+    interaction)
+      fg="white"; bg="colour201" ;;
+    qa)
+      fg="white"; bg="colour160" ;;
+    member*)
+      fg="white"; bg="colour244" ;;
+  esac
+
+  if [[ "$RMUX_THEME" == "light" && "$role" == "member"* ]]; then
+    fg="black"; bg="colour252"
+  elif [[ "$RMUX_THEME" == "mono" ]]; then
+    if [[ "$role" == "leader" ]]; then
+      fg="black"; bg="white"
+    else
+      fg="white"; bg="colour238"
+    fi
+  fi
+
+  printf "%s %s" "$fg" "$bg"
+}
+
+role_badge_format() {
+  local role="$1"
+  local label="$2"
+  local marker="${3:-}"
+  local fg bg
+
+  read -r fg bg <<<"$(role_badge_colors "$role" "$marker")"
+  if [[ -n "$marker" ]]; then
+    label="$marker $label"
+  fi
+
+  printf "#[bold]#[fg=%s]#[bg=%s] %s #[default]" "$fg" "$bg" "$label"
 }
 
 rmux_demo() {
@@ -95,7 +227,13 @@ priority:
 
 alerts:
   Member approval/confirmation alerts are written under alerts/<session>/.
-  Use ./launch.sh alerts [SESSION] to read the session-scoped alert log.
+  Use ./launch.sh alerts [SESSION] [--all|--follow] to read the alert log.
+
+visual options:
+  RMUX_THEME=dark|light|mono sets border/status colors. Default: dark.
+  RMUX_ALERT_INTERVAL controls alert polling seconds. Default: 2.
+  RMUX_ALERT_COOLDOWN controls repeated alert messages per session. Default: 30.
+  RMUX_ALERT_MESSAGE=1 enables transient rmux alert messages. Default: 0.
 EOF
 }
 
@@ -140,14 +278,36 @@ alert_state_path() {
 
 alerts() {
   local session_name="${1:-$SESSION_BASE}"
+  local mode="${2:-}"
   local log_path
+
+  if [[ "$session_name" == "--all" || "$session_name" == "--follow" || "$session_name" == "-f" ]]; then
+    mode="$session_name"
+    session_name="$SESSION_BASE"
+  fi
 
   log_path="$(alert_dir_for_session "$session_name")/alerts.log"
   if [[ ! -f "$log_path" ]]; then
     echo "no alerts for session: $session_name"
     return 0
   fi
-  cat "$log_path"
+
+  case "$mode" in
+    --all)
+      cat "$log_path"
+      ;;
+    --follow|-f)
+      tail -n 20 -f "$log_path"
+      ;;
+    "")
+      tail -n 20 "$log_path"
+      ;;
+    *)
+      echo "unknown alerts option: $mode" >&2
+      echo "usage: ./launch.sh alerts [SESSION] [--all|--follow]" >&2
+      exit 2
+      ;;
+  esac
 }
 
 resolve_workdir() {
@@ -296,7 +456,7 @@ member_command_with_auto_mode() {
   local base="${first##*/}"
 
   case "$base" in
-    claude|dclaude) ;;
+    claude|dclaude|dfclaude) ;;
     *)
       printf "%s" "$cmd"
       return
@@ -644,26 +804,68 @@ configure_pane_titles() {
   local role_expr=""
   local border_format
   local role_label
+  local state_marker
+  local role_badge
+  local leader_badge
   local i
 
   for i in "${!member_targets[@]}"; do
     role_label="${MEMBER_NAMES[$i]}"
+    state_marker=""
     if [[ -n "$ALERT_DIR" && -f "$(alert_state_path "$role_label")" ]]; then
-      role_label="! $role_label"
+      state_marker="$(<"$(alert_state_path "$role_label")")"
+      state_marker="${state_marker:-!}"
     fi
-    role_expr+="#{?#{==:#{pane_id},${member_targets[$i]}},$role_label,"
+    role_badge="$(role_badge_format "$role_label" "$role_label" "$state_marker")"
+    role_expr+="#{?#{==:#{pane_id},${member_targets[$i]}},$role_badge,"
   done
-  role_expr+="#{?#{==:#{pane_id},$leader_target},leader,pane}"
+  leader_badge="$(role_badge_format "leader" "leader" "")"
+  role_expr+="#{?#{==:#{pane_id},$leader_target},$leader_badge,#[fg=colour244] pane #[default]}"
   for i in "${!member_targets[@]}"; do
     role_expr+="}"
   done
 
-  border_format="#[align=left]#{?pane_active,#[bold,fg=black,bg=yellow],#[bold,fg=colour250,bg=colour238]} $role_expr #[default]"
+  border_format="#[align=left]#{?pane_active,#[bold]#[fg=black]#[bg=colour220] > #[default] , }$role_expr"
 
-  rmux_demo set-option -w -t "$target" pane-active-border-style fg=yellow >/dev/null 2>&1 || true
-  rmux_demo set-option -w -t "$target" pane-border-style fg=colour238 >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" pane-active-border-style "$THEME_ACTIVE_BORDER" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" pane-border-style "$THEME_INACTIVE_BORDER" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" pane-border-lines heavy >/dev/null 2>&1 || true
   rmux_demo set-option -w -t "$target" pane-border-status top >/dev/null
   rmux_demo set-option -w -t "$target" pane-border-format "$border_format" >/dev/null
+}
+
+configure_status_line() {
+  local target="$SESSION:$WINDOW"
+  local roster=""
+  local alerts_label
+  local workdir_label
+  local status_left
+  local status_right
+  local i
+
+  for i in "${!MEMBER_NAMES[@]}"; do
+    if [[ -n "$roster" ]]; then
+      roster+=","
+    fi
+    roster+="${MEMBER_NAMES[$i]}"
+  done
+
+  alerts_label="${ALERT_LOG:-none}"
+  workdir_label="$WORKDIR"
+  status_left="#[bold]#[fg=black]#[bg=colour220] RMUX #[default]#[fg=colour220]#[bg=colour236] mode:$WORKGROUP_MODE #[default]#[fg=colour45]#[bg=colour236] members:$MEMBER_COUNT #[default]#[fg=colour250]#[bg=colour236] roster:$roster "
+  status_right="#[bold]#[fg=black]#[bg=colour46] orchestrator-only #[default]#[fg=colour220]#[bg=colour236] alerts:$alerts_label #[default]#[fg=colour250]#[bg=colour236] workdir:$workdir_label "
+
+  rmux_demo set-option -w -t "$target" status on >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-interval 0 >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-left-length 160 >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-right-length 260 >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" automatic-rename off >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" allow-rename off >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-style "$THEME_STATUS_STYLE" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-left-style "$THEME_STATUS_LEFT_STYLE" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-right-style "$THEME_STATUS_RIGHT_STYLE" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-left "$status_left" >/dev/null 2>&1 || true
+  rmux_demo set-option -w -t "$target" status-right "$status_right" >/dev/null 2>&1 || true
 }
 
 leader_command() {
@@ -718,14 +920,16 @@ member_command() {
 set_member_title() {
   local index="$1"
   local target="$2"
+  local agent
 
-  rmux_demo select-pane -t "$target" -T "${MEMBER_NAMES[$index]}: claude" >/dev/null 2>&1 || true
+  agent="$(agent_name_from_command "$MEMBER_CMD")"
+  rmux_demo select-pane -t "$target" -T "${MEMBER_NAMES[$index]}: $agent" >/dev/null 2>&1 || true
 }
 
 alert_line_from_capture() {
   local line
   local lines=()
-  local alert_regex='(Do you want to proceed\?|Would you like to .*\?|Allow .*\?|Approve .*\?|approval required|permission required|Permission required|Press Enter to continue|\[[yY]/[nN]\]|\[[yY]/N\]|\([yY]/[nN]\)|是否继续[？?]|是否允许[？?]|是否授权[？?]|继续吗[？?]?)'
+  local alert_regex='(Do you want to proceed\?|Would you like to .*\?|Allow .*\?|Approve .*\?|approval required|permission required|Permission required|Press Enter to continue|\[[yY]/[nN]\]|\[[yY]/N\]|\([yY]/[nN]\)|是否继续[？?]|是否允许[？?]|是否授权[？?]|继续吗[？?]?|^[[:space:]]*(BLOCKED|ERROR|FAILED|EXCEPTION|DONE|COMPLETED):|^[[:space:]]*(阻塞|报错|失败|完成|已完成)：)'
 
   while IFS= read -r line; do
     lines+=("$line")
@@ -743,13 +947,30 @@ alert_line_from_capture() {
   return 1
 }
 
+alert_marker_from_line() {
+  local line="$1"
+
+  if [[ "$line" =~ ^[[:space:]]*(BLOCKED|ERROR|FAILED|EXCEPTION): || "$line" =~ ^[[:space:]]*(阻塞|报错|失败)： ]]; then
+    printf "x"
+  elif [[ "$line" =~ ^[[:space:]]*(DONE|COMPLETED): || "$line" =~ ^[[:space:]]*(完成|已完成)： ]]; then
+    printf "ok"
+  elif [[ "$line" =~ (Would\ you\ like\ to|是否继续|继续吗) ]]; then
+    printf "?"
+  else
+    printf "!"
+  fi
+}
+
 active_alert_names() {
   local names=()
   local name
+  local marker
 
   for name in "${MEMBER_NAMES[@]}"; do
     if [[ -f "$(alert_state_path "$name")" ]]; then
-      names+=("$name")
+      marker="$(<"$(alert_state_path "$name")")"
+      marker="${marker:-!}"
+      names+=("$marker $name")
     fi
   done
 
@@ -760,11 +981,21 @@ active_alert_names() {
 refresh_alert_visuals() {
   local leader_target="$1"
   local active_names
+  local now last_path last
 
   configure_pane_titles "$leader_target"
   active_names="$(active_alert_names)"
-  if [[ -n "$active_names" ]]; then
-    rmux_demo display-message -t "$SESSION:$WINDOW" "WAITING: $active_names needs approval/confirmation" >/dev/null 2>&1 || true
+  if [[ "$ALERT_MESSAGE" == "1" && -n "$active_names" ]]; then
+    now="$(date '+%s')"
+    last_path="$ALERT_DIR/display-message.last"
+    last=0
+    if [[ -f "$last_path" ]]; then
+      last="$(<"$last_path")"
+    fi
+    if (( now - last >= ALERT_COOLDOWN )); then
+      printf '%s\n' "$now" >"$last_path"
+      rmux_demo display-message -t "$SESSION:$WINDOW" "ALERT: $active_names" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -792,16 +1023,19 @@ start_alert_watcher() {
         capture="$(rmux_demo capture-pane -p -t "$target" -S -80 2>/dev/null || true)"
 
         if line="$(alert_line_from_capture <<<"$capture")"; then
+          local marker
+          marker="$(alert_marker_from_line "$line")"
           if [[ ! -f "$state_path" ]]; then
             timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
-            printf '%s\t%s\t%s\t%s\n' "$timestamp" "$name" "$target" "$line" >>"$ALERT_LOG"
-            touch "$state_path"
-            rmux_demo select-pane -t "$target" -T "! $name: claude" >/dev/null 2>&1 || true
+            printf '%s\t%s\t%s\t%s\t%s\n' "$timestamp" "$marker" "$name" "$target" "$line" >>"$ALERT_LOG"
+            printf '%s\n' "$marker" >"$state_path"
+            changed=1
+          elif [[ "$(<"$state_path")" != "$marker" ]]; then
+            printf '%s\n' "$marker" >"$state_path"
             changed=1
           fi
         elif [[ -f "$state_path" ]]; then
           rm -f "$state_path"
-          rmux_demo select-pane -t "$target" -T "$name: claude" >/dev/null 2>&1 || true
           changed=1
         fi
       done
@@ -865,6 +1099,7 @@ launch() {
   local member_targets_string=""
   local member_roles_string=""
   local member1_target leader_target member_target
+  local leader_percent
   local requested_workdir="$WORKDIR_INPUT"
   local requested_member_count="$MEMBER_COUNT_INPUT"
   local requested_mode="$WORKGROUP_MODE_INPUT"
@@ -922,6 +1157,7 @@ launch() {
   resolve_workdir "$requested_workdir"
   configure_members "$requested_mode" "$requested_member_count"
   check
+  apply_theme
   install -d -m 700 "$SOCKET_DIR"
   SESSION="$(next_session_name "$SESSION_BASE")"
   init_alert_log
@@ -930,7 +1166,11 @@ launch() {
   member_targets+=("$member1_target")
   set_member_title 0 "$member1_target"
 
-  leader_target="$(rmux_demo split-window -v -P -F '#{pane_id}' -t "$member1_target" -p 50 "sleep 3600")"
+  leader_percent=50
+  if (( MEMBER_COUNT > 3 )); then
+    leader_percent=38
+  fi
+  leader_target="$(rmux_demo split-window -v -P -F '#{pane_id}' -t "$member1_target" -p "$leader_percent" "sleep 3600")"
 
   create_member_panes
 
@@ -949,6 +1189,7 @@ launch() {
   rmux_demo respawn-pane -k -t "$leader_target" "$(leader_command "$member_targets_string" "$member_roles_string" "${member_targets[0]:-}" "${member_targets[1]:-}")"
   rmux_demo select-pane -t "$leader_target" -T "leader: codex" >/dev/null 2>&1 || true
   configure_pane_titles "$leader_target"
+  configure_status_line
   start_alert_watcher "$leader_target"
   rmux_demo select-pane -t "$leader_target"
 
@@ -958,12 +1199,16 @@ launch() {
   echo "workdir: $WORKDIR"
   echo "mode: $WORKGROUP_MODE"
   echo "members: $MEMBER_COUNT"
+  echo "theme: $RMUX_THEME"
   echo "alerts: $ALERT_LOG"
+  echo "guard: leader orchestrates only; members own code/config changes"
   for i in "${!member_targets[@]}"; do
     echo "${MEMBER_NAMES[$i]}: ${member_targets[$i]}"
   done
   echo "leader:  $leader_target"
   echo
+  echo "alerts: ./launch.sh alerts $SESSION"
+  echo "follow alerts: ./launch.sh alerts $SESSION --follow"
   echo "detach: Ctrl-b then d"
   echo "reattach: ./launch.sh attach $SESSION"
   echo "attaching to rmux session..."
@@ -976,7 +1221,7 @@ case "$COMMAND" in
   check) check ;;
   help|-h|--help) print_help ;;
   list) list_sessions ;;
-  alerts) alerts "${2:-}" ;;
+  alerts) alerts "${2:-}" "${3:-}" ;;
   cleanup) cleanup "${2:-}" ;;
   attach) attach "${2:-}" ;;
   /*|.|..|./*|../*) launch "$@" ;;

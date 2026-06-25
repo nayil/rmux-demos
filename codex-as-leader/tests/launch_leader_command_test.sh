@@ -105,6 +105,54 @@ if ! grep -Fq 'select-pane -t %1 -T developer: claude' "$LOG"; then
   exit 1
 fi
 
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup status on' "$LOG"; then
+  echo "launcher did not enable a stable status line" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup status-interval 0' "$LOG"; then
+  echo "launcher did not disable periodic status redraws" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup status-left-length 160' "$LOG" || ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup status-right-length 260' "$LOG"; then
+  echo "launcher did not reserve enough room for the visual status line" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup automatic-rename off' "$LOG" || ! grep -Fq 'set-option -w -t codex-as-leader-test:workgroup allow-rename off' "$LOG"; then
+  echo "launcher did not disable automatic window renaming" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'status-left #[bold]#[fg=black]#[bg=colour220] RMUX' "$LOG" || ! grep -Fq 'mode:simple' "$LOG" || ! grep -Fq 'members:2' "$LOG"; then
+  echo "status line did not include mode, member count, and leader guard" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'status-right #[bold]#[fg=black]#[bg=colour46] orchestrator-only' "$LOG"; then
+  echo "status line did not include a visible orchestrator guard badge" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'pane-border-lines heavy' "$LOG"; then
+  echo "launcher did not request strong pane border lines" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if ! grep -Fq '#[bold]#[fg=white]#[bg=colour34] developer #[default]' "$LOG" || ! grep -Fq '#[bold]#[fg=black]#[bg=colour220] leader #[default]' "$LOG"; then
+  echo "pane border labels did not include visible role color badges" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'dclaude\ --permission-mode\ auto' "$LOG"; then
   echo "default Claude member command did not enable auto permission mode" >&2
   cat "$LOG" >&2
@@ -310,9 +358,39 @@ if grep -Fq '#{pane_title}' <<<"$border_format_lines"; then
   exit 1
 fi
 
-if ! grep -Fq 'pane-border-format #[align=left]#{?pane_active,#[bold,fg=black,bg=yellow],#[bold,fg=colour250,bg=colour238]}' <<<"$border_format_lines"; then
-  echo "launcher did not configure highlighted left-aligned pane titles" >&2
+if ! grep -Fq 'pane-border-format #[align=left]#{?pane_active,#[bold]#[fg=black]#[bg=colour220] > #[default]' <<<"$border_format_lines" || ! grep -Fq '#[bold]#[fg=white]#[bg=colour244] member1 #[default]' <<<"$border_format_lines"; then
+  echo "launcher did not configure strong left-aligned pane role badges" >&2
   printf '%s\n' "$border_format_lines" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(
+  export RMUX_THEME="mono"
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+if ! grep -Fq 'pane-active-border-style fg=white' "$LOG" || ! grep -Fq 'pane-border-style fg=colour244' "$LOG"; then
+  echo "mono theme did not configure expected border colors" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+
+(
+  export CLAUDE_CMD="codex"
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+if ! grep -Fq 'select-pane -t %1 -T developer: codex' "$LOG"; then
+  echo "member pane title did not show the inferred codex agent" >&2
+  cat "$LOG" >&2
   exit 1
 fi
 
@@ -413,7 +491,7 @@ case "$classic_border_format" in
 esac
 
 case "$classic_border_format" in
-  *'#{?#{==:#{pane_id},%1},frontend,'*'#{?#{==:#{pane_id},%3},backend,'*'#{?#{==:#{pane_id},%4},architect,'*'#{?#{==:#{pane_id},%2},leader,'*) ;;
+  *'#{?#{==:#{pane_id},%1},'*' frontend #[default]'*'#{?#{==:#{pane_id},%3},'*' backend #[default]'*'#{?#{==:#{pane_id},%4},'*' architect #[default]'*'#{?#{==:#{pane_id},%2},'*' leader #[default]'*) ;;
   *)
     echo "classic border format did not map pane ids to stable role labels" >&2
     echo "$classic_border_format" >&2
@@ -436,6 +514,12 @@ rm -f "$RMUX_TEST_SPLIT_COUNT"
 (cd "$STARTDIR" && "$ROOT/launch.sh" launch "$WORKDIR" --mode advanced >/dev/null)
 
 leader_cmd="$(grep '^respawn-pane ' "$LOG" | tail -n 1)"
+
+if ! grep -Fq 'split-window -v -P -F #{pane_id} -t %1 -p 38 sleep 3600' "$LOG"; then
+  echo "advanced mode did not reserve a compact fixed leader pane height" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
 
 case "$leader_cmd" in
   *"export RMUX_WORKGROUP_MODE=advanced;"*"export RMUX_MEMBER_COUNT=5;"*) ;;
@@ -535,11 +619,13 @@ if [[ ! -f "$TMP/alerts/codex-as-leader-other/alerts.log" ]]; then
   exit 1
 fi
 
-printf '2026-06-25T00:00:00+0800\tfrontend\t%%1\tpermission requested\n' >"$TMP/alerts/codex-as-leader-other/alerts.log"
+for i in $(seq 1 25); do
+  printf '2026-06-25T00:00:%02d+0800\tfrontend\t%%1\talert line %02d\n' "$i" "$i"
+done >"$TMP/alerts/codex-as-leader-other/alerts.log"
 alerts_output="$(RMUX_WORKGROUP_SESSION=codex-as-leader-other "$ROOT/launch.sh" alerts)"
 
-if [[ "$alerts_output" != *"permission requested"* ]]; then
-  echo "alerts command did not read the session-scoped alert log" >&2
+if [[ "$alerts_output" != *"alert line 25"* || "$alerts_output" == *"alert line 01"* ]]; then
+  echo "alerts command did not show the latest session-scoped alert entries by default" >&2
   printf '%s\n' "$alerts_output" >&2
   exit 1
 fi
@@ -578,6 +664,37 @@ fi
 if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
   echo "alert watcher should not mark a member waiting for ordinary confirmation discussion" >&2
   cat "$LOG" >&2
+  exit 1
+fi
+
+: >"$LOG"
+rm -f "$RMUX_TEST_SPLIT_COUNT"
+rm -f "$TMP/has-session-count"
+export RMUX_TEST_HAS_SESSION_ONCE_AFTER_FIRST=1
+export RMUX_TEST_HAS_SESSION_COUNT_FILE="$TMP/has-session-count"
+export RMUX_TEST_CAPTURE_PANE_OUTPUT="- If you are blocked, state the missing input or evidence needed."
+
+(
+  export RMUX_WORKGROUP_SESSION="codex-as-leader-role-prompt"
+  export RMUX_ALERT_INTERVAL=0
+  cd "$STARTDIR"
+  "$ROOT/launch.sh" launch "$WORKDIR" >/dev/null
+)
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if [[ -f "$TMP/has-session-count" ]] && (( $(<"$TMP/has-session-count") >= 3 )); then
+    break
+  fi
+  sleep 0.1
+done
+
+unset RMUX_TEST_HAS_SESSION_ONCE_AFTER_FIRST
+unset RMUX_TEST_HAS_SESSION_COUNT_FILE
+unset RMUX_TEST_CAPTURE_PANE_OUTPUT
+
+if [[ -s "$TMP/alerts/codex-as-leader-role-prompt/alerts.log" ]]; then
+  echo "alert watcher should not treat role prompt blocked guidance as a member alert" >&2
+  cat "$TMP/alerts/codex-as-leader-role-prompt/alerts.log" >&2
   exit 1
 fi
 
@@ -638,7 +755,7 @@ export RMUX_TEST_CAPTURE_PANE_OUTPUT="Do you want to proceed? [y/N]"
 )
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG" && [[ -f "$TMP/has-session-count" ]] && (( $(<"$TMP/has-session-count") >= 3 )); then
+  if grep -Fq '! developer' "$LOG" && [[ -f "$TMP/has-session-count" ]] && (( $(<"$TMP/has-session-count") >= 3 )); then
     break
   fi
   sleep 0.1
@@ -654,14 +771,20 @@ if ! grep -Fq 'Do you want to proceed? [y/N]' "$TMP/alerts/codex-as-leader-alert
   exit 1
 fi
 
-if ! grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
-  echo "alert watcher did not mark the blocked member pane title" >&2
+if grep -Fq 'select-pane -t %1 -T ! developer: claude' "$LOG"; then
+  echo "alert watcher should not use select-pane to mark alerts because it steals focus" >&2
   cat "$LOG" >&2
   exit 1
 fi
 
 if ! grep -Fq 'pane-border-format #[align=left]' "$LOG" || ! grep -Fq '! developer' "$LOG"; then
   echo "alert watcher did not refresh pane border labels with a visible alert marker" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+if grep -Fq 'display-message -t codex-as-leader-alert:workgroup' "$LOG"; then
+  echo "alert watcher should not show transient display messages by default because they cause visual flicker" >&2
   cat "$LOG" >&2
   exit 1
 fi
